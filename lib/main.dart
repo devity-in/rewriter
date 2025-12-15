@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -68,7 +69,7 @@ void main() async {
         }
       },
       onQuitClick: () {
-        windowManager.close();
+        exit(0);
       },
       onToggleClick: () {
         appProvider.toggleEnabled();
