@@ -20,13 +20,13 @@ class RewriterService {
   String? _pendingText;
   bool _isProcessing = false;
 
-  // Store rewritten texts for tray menu
-  List<String> _rewrittenTexts = [];
-  String? _lastOriginalText;
-  Function(List<String>)? _onRewrittenTextsChanged;
-  Function(String)?
-  _onStatusChanged; // Status: 'idle', 'processing', 'ready', 'error'
-  Function(String)? _onOriginalTextChanged; // Callback for original text
+    // Store rewritten text (single version)
+    String? _rewrittenText;
+    String? _lastOriginalText;
+    Function(String)? _onRewrittenTextChanged;
+    Function(String)?
+    _onStatusChanged; // Status: 'idle', 'processing', 'ready', 'error'
+    Function(String)? _onOriginalTextChanged; // Callback for original text
 
   final NotificationService _notificationService = NotificationService();
   final HistoryService _historyService = HistoryService();
@@ -64,9 +64,9 @@ class RewriterService {
     _clipboardService.onClipboardChanged = _handleClipboardChange;
   }
 
-  /// Set callback for when rewritten texts are available
-  set onRewrittenTextsChanged(Function(List<String>)? callback) {
-    _onRewrittenTextsChanged = callback;
+  /// Set callback for when rewritten text is available
+  set onRewrittenTextChanged(Function(String)? callback) {
+    _onRewrittenTextChanged = callback;
   }
 
   /// Set callback for when status changes
@@ -77,10 +77,10 @@ class RewriterService {
   /// Get current status
   String get status => _isProcessing
       ? 'processing'
-      : (_rewrittenTexts.isNotEmpty ? 'ready' : 'idle');
+      : (_rewrittenText != null ? 'ready' : 'idle');
 
-  /// Get current rewritten texts
-  List<String> get rewrittenTexts => List.unmodifiable(_rewrittenTexts);
+  /// Get current rewritten text
+  String? get rewrittenText => _rewrittenText;
 
   /// Handle clipboard content change
   void _handleClipboardChange(String text) {
@@ -174,69 +174,44 @@ class RewriterService {
     _onStatusChanged?.call('processing');
     _onOriginalTextChanged?.call(textToRewrite);
 
-    // Show processing notification
-    await _notificationService.showProcessingNotification(textToRewrite);
-
     try {
-      // Generate 2 rewritten versions
-      final results = await _geminiService!.rewriteTextMultiple(
+      // Generate single rewritten version
+      final result = await _geminiService!.rewriteText(
         textToRewrite,
         style: _config?.rewriteStyle ?? 'professional',
       );
 
-      debugPrint(
-        'RewriterService: Received ${results.length} results from API',
-      );
+      debugPrint('RewriterService: Received result from API');
+      debugPrint('Success: ${result.success}');
+      debugPrint('Original: "${result.originalText}"');
+      
+      if (result.success) {
+        _rewrittenText = result.rewrittenText;
+        debugPrint('Rewritten: "${_rewrittenText}"');
 
-      // Print detailed results
-      for (int i = 0; i < results.length; i++) {
-        final result = results[i];
-        debugPrint('--- Result ${i + 1} ---');
-        debugPrint('Success: ${result.success}');
-        debugPrint('Original: "${result.originalText}"');
-        if (result.success) {
-          debugPrint('Rewritten: "${result.rewrittenText}"');
-        } else {
-          debugPrint('Error: ${result.error}');
-        }
-        debugPrint('---');
-      }
+        // Automatically copy to clipboard
+        await _clipboardService.setClipboardText(_rewrittenText!);
+        debugPrint('RewriterService: Automatically copied rewritten text to clipboard');
 
-      // Store successful rewritten texts (up to 2)
-      _rewrittenTexts = results
-          .where((r) => r.success)
-          .take(2)
-          .map((r) => r.rewrittenText)
-          .toList();
-
-      debugPrint(
-        'RewriterService: Successfully rewritten ${_rewrittenTexts.length} versions',
-      );
-      for (int i = 0; i < _rewrittenTexts.length; i++) {
-        debugPrint('  Version ${i + 1}: "${_rewrittenTexts[i]}"');
-      }
-
-      // Notify tray manager of new rewritten texts
-      if (_rewrittenTexts.isNotEmpty) {
-        _onRewrittenTextsChanged?.call(_rewrittenTexts);
+        // Notify callback
+        _onRewrittenTextChanged?.call(_rewrittenText!);
         _onStatusChanged?.call('ready');
 
-        // Save to history
+        // Save to history (as list for compatibility)
         await _historyService.addToHistory(
           originalText: _lastOriginalText ?? textToRewrite,
-          rewrittenTexts: _rewrittenTexts,
+          rewrittenTexts: [_rewrittenText!],
           style: _config?.rewriteStyle ?? 'professional',
         );
 
         // Show success notification
         await _notificationService.showSuccessNotification(
           _lastOriginalText ?? textToRewrite,
-          _rewrittenTexts.length,
+          _rewrittenText!,
         );
       } else {
-        debugPrint(
-          'RewriterService: No successful rewrites, not updating tray menu',
-        );
+        debugPrint('Error: ${result.error}');
+        _rewrittenText = null;
         _onStatusChanged?.call('error');
 
         // Show error notification
@@ -244,8 +219,6 @@ class RewriterService {
           'Failed to rewrite text. Check API key and connection.',
         );
       }
-
-      // Don't automatically copy to clipboard - let user choose from menu
     } catch (e) {
       debugPrint('RewriterService: Error processing text: $e');
       _onStatusChanged?.call('error');

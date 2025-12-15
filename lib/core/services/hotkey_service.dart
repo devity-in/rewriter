@@ -5,15 +5,11 @@ import 'package:hotkey_manager/hotkey_manager.dart';
 
 /// Service for managing global keyboard shortcuts
 class HotkeyService {
-  HotKey? _showPreviewHotkey;
-  HotKey? _selectVersion1Hotkey;
-  HotKey? _selectVersion2Hotkey;
+  HotKey? _copyRewrittenHotkey;
   HotKey? _showSettingsHotkey;
   HotKey? _toggleEnabledHotkey;
 
-  Function()? onShowPreview;
-  Function()? onSelectVersion1;
-  Function()? onSelectVersion2;
+  Function()? onCopyRewritten;
   Function()? onShowSettings;
   Function()? onToggleEnabled;
 
@@ -25,45 +21,17 @@ class HotkeyService {
     }
 
     try {
-      // Cmd+Shift+R - Show preview window
-      _showPreviewHotkey = HotKey(
-        key: LogicalKeyboardKey.keyR,
+      // Cmd+Shift+C - Copy rewritten text
+      _copyRewrittenHotkey = HotKey(
+        key: LogicalKeyboardKey.keyC,
         modifiers: [HotKeyModifier.meta, HotKeyModifier.shift],
         scope: HotKeyScope.system,
       );
       await hotKeyManager.register(
-        _showPreviewHotkey!,
+        _copyRewrittenHotkey!,
         keyDownHandler: (hotKey) {
-          debugPrint('Hotkey: Cmd+Shift+R pressed');
-          onShowPreview?.call();
-        },
-      );
-
-      // Cmd+Shift+1 - Select version 1
-      _selectVersion1Hotkey = HotKey(
-        key: LogicalKeyboardKey.digit1,
-        modifiers: [HotKeyModifier.meta, HotKeyModifier.shift],
-        scope: HotKeyScope.system,
-      );
-      await hotKeyManager.register(
-        _selectVersion1Hotkey!,
-        keyDownHandler: (hotKey) {
-          debugPrint('Hotkey: Cmd+Shift+1 pressed');
-          onSelectVersion1?.call();
-        },
-      );
-
-      // Cmd+Shift+2 - Select version 2
-      _selectVersion2Hotkey = HotKey(
-        key: LogicalKeyboardKey.digit2,
-        modifiers: [HotKeyModifier.meta, HotKeyModifier.shift],
-        scope: HotKeyScope.system,
-      );
-      await hotKeyManager.register(
-        _selectVersion2Hotkey!,
-        keyDownHandler: (hotKey) {
-          debugPrint('Hotkey: Cmd+Shift+2 pressed');
-          onSelectVersion2?.call();
+          debugPrint('Hotkey: Cmd+Shift+C pressed');
+          onCopyRewritten?.call();
         },
       );
 
@@ -104,14 +72,8 @@ class HotkeyService {
   /// Unregister all hotkeys
   Future<void> dispose() async {
     try {
-      if (_showPreviewHotkey != null) {
-        await hotKeyManager.unregister(_showPreviewHotkey!);
-      }
-      if (_selectVersion1Hotkey != null) {
-        await hotKeyManager.unregister(_selectVersion1Hotkey!);
-      }
-      if (_selectVersion2Hotkey != null) {
-        await hotKeyManager.unregister(_selectVersion2Hotkey!);
+      if (_copyRewrittenHotkey != null) {
+        await hotKeyManager.unregister(_copyRewrittenHotkey!);
       }
       if (_showSettingsHotkey != null) {
         await hotKeyManager.unregister(_showSettingsHotkey!);

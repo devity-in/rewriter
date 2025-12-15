@@ -14,7 +14,6 @@ import 'package:rewriter/core/services/clipboard_service.dart';
 import 'package:rewriter/core/services/language_detector.dart';
 import 'package:rewriter/core/services/rewriter_service.dart';
 import 'package:rewriter/ui/providers/app_provider.dart';
-import 'package:rewriter/ui/preview/preview_manager.dart';
 
 void main() {
   testWidgets('RewriterApp builds successfully', (WidgetTester tester) async {
@@ -33,16 +32,11 @@ void main() {
       rewriterService: rewriterService,
     );
 
-    final previewManager = PreviewManager(clipboardService: clipboardService);
-
     // Build our app and trigger a frame.
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: appProvider,
-        child: RewriterApp(
-          previewManager: previewManager,
-          clipboardService: clipboardService,
-        ),
+        child: const RewriterApp(),
       ),
     );
 

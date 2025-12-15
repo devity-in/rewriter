@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../core/services/clipboard_service.dart';
 
@@ -8,6 +10,7 @@ class PreviewWindow extends StatefulWidget {
   final List<String> rewrittenTexts;
   final ClipboardService clipboardService;
   final VoidCallback? onDismiss;
+  final bool isLoading;
 
   const PreviewWindow({
     super.key,
@@ -15,6 +18,7 @@ class PreviewWindow extends StatefulWidget {
     required this.rewrittenTexts,
     required this.clipboardService,
     this.onDismiss,
+    this.isLoading = false,
   });
 
   @override
@@ -22,11 +26,41 @@ class PreviewWindow extends StatefulWidget {
 }
 
 class _PreviewWindowState extends State<PreviewWindow> {
+  bool _isComparisonView = false;
+  Timer? _autoDismissTimer;
+  final FocusNode _focusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
-    // Auto-dismiss after 30 seconds
-    Future.delayed(const Duration(seconds: 30), () {
+    // Auto-dismiss after 60 seconds (increased from 30)
+    _resetAutoDismissTimer();
+    
+    // Request focus to capture keyboard events
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoDismissTimer?.cancel();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(PreviewWindow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reset timer when content changes
+    if (oldWidget.rewrittenTexts != widget.rewrittenTexts) {
+      _resetAutoDismissTimer();
+    }
+  }
+
+  void _resetAutoDismissTimer() {
+    _autoDismissTimer?.cancel();
+    _autoDismissTimer = Timer(const Duration(seconds: 60), () {
       if (mounted) {
         _dismiss();
       }
@@ -75,9 +109,19 @@ class _PreviewWindowState extends State<PreviewWindow> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Material(
-      color: colorScheme.surface,
-      child: Container(
+    return KeyboardListener(
+      focusNode: _focusNode,
+      onKeyEvent: (event) {
+        if (event is KeyDownEvent) {
+          // Handle Esc key to dismiss
+          if (event.logicalKey == LogicalKeyboardKey.escape) {
+            _dismiss();
+          }
+        }
+      },
+      child: Material(
+        color: colorScheme.surface,
+        child: Container(
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
@@ -129,7 +173,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Rewritten Text',
+                          widget.isLoading ? 'Processing...' : 'Rewritten Text',
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
@@ -137,7 +181,9 @@ class _PreviewWindowState extends State<PreviewWindow> {
                           ),
                         ),
                         Text(
-                          '${widget.rewrittenTexts.length} version${widget.rewrittenTexts.length > 1 ? 's' : ''} available',
+                          widget.isLoading
+                              ? 'Rewriting your text with AI'
+                              : '${widget.rewrittenTexts.length} version${widget.rewrittenTexts.length > 1 ? 's' : ''} available',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: Colors.white.withOpacity(0.9),
                           ),
@@ -166,27 +212,110 @@ class _PreviewWindowState extends State<PreviewWindow> {
 
             // Content
             Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Original text section
-                    _buildTextSection(
-                      context,
-                      'Original Text',
-                      widget.originalText,
-                      Icons.text_fields_rounded,
-                      const Color(0xFF6B7280),
-                      false,
-                    ),
-                    const SizedBox(height: 20),
+              child: widget.isLoading
+                  ? _buildLoadingState(context)
+                  : SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // View toggle button
+                          if (widget.rewrittenTexts.isNotEmpty)
+                            Row(
+                              children: [
+                                const Spacer(),
+                                _buildViewToggleButton(context),
+                              ],
+                            ),
+                          if (widget.rewrittenTexts.isNotEmpty)
+                            const SizedBox(height: 16),
 
-                    // Rewritten versions
+                          // Original text section
+                          _buildTextSection(
+                            context,
+                            'Original Text',
+                            widget.originalText,
+                            Icons.text_fields_rounded,
+                            const Color(0xFF6B7280),
+                            false,
+                          ),
+                          const SizedBox(height: 20),
+
+                          // Rewritten versions
+                          if (_isComparisonView && widget.rewrittenTexts.isNotEmpty)
+                            _buildComparisonView(context)
+                          else
+                            ...widget.rewrittenTexts.asMap().entries.map((entry) {
+                              final index = entry.key;
+                              final text = entry.value;
+                              final colors = [
+                                [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                                [const Color(0xFF10B981), const Color(0xFF059669)],
+                                [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                                [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
+                              ];
+                              final colorPair = colors[index % colors.length];
+                              
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 20),
+                                child: _buildRewrittenSection(
+                                  context,
+                                  'Version ${index + 1}',
+                                  text,
+                                  index + 1,
+                                  colorPair[0],
+                                  colorPair[1],
+                                ),
+                              );
+                            }),
+
+                          // Keyboard shortcuts hint
+                          if (widget.rewrittenTexts.isNotEmpty) ...[
+                            const SizedBox(height: 24),
+                            _buildKeyboardShortcutsHint(context),
+                          ],
+                        ],
+                      ),
+                    ),
+            ),
+
+            // Modern Footer with actions
+            if (!widget.isLoading)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                  border: Border(
+                    top: BorderSide(
+                      color: colorScheme.outline.withOpacity(0.1),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _dismiss,
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        label: const Text('Dismiss (Esc)'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     ...widget.rewrittenTexts.asMap().entries.map((entry) {
                       final index = entry.key;
                       final text = entry.value;
+                      final versionNum = index + 1;
                       final colors = [
                         [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
                         [const Color(0xFF10B981), const Color(0xFF059669)],
@@ -196,124 +325,65 @@ class _PreviewWindowState extends State<PreviewWindow> {
                       final colorPair = colors[index % colors.length];
                       
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        child: _buildRewrittenSection(
-                          context,
-                          'Version ${index + 1}',
-                          text,
-                          index + 1,
-                          colorPair[0],
-                          colorPair[1],
+                        padding: EdgeInsets.only(
+                          left: index > 0 ? 12 : 0,
+                        ),
+                        child: Flexible(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: colorPair,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: colorPair[0].withOpacity(0.3),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _copyToClipboard(text, versionNum),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                    horizontal: 20,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.content_copy_rounded,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Copy $versionNum',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       );
                     }),
                   ],
                 ),
               ),
-            ),
-
-            // Modern Footer with actions
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(20),
-                  bottomRight: Radius.circular(20),
-                ),
-                border: Border(
-                  top: BorderSide(
-                    color: colorScheme.outline.withOpacity(0.1),
-                  ),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _dismiss,
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      label: const Text('Dismiss'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  ...widget.rewrittenTexts.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final text = entry.value;
-                    final versionNum = index + 1;
-                    final colors = [
-                      [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                      [const Color(0xFF10B981), const Color(0xFF059669)],
-                      [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-                      [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
-                    ];
-                    final colorPair = colors[index % colors.length];
-                    
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        left: index > 0 ? 12 : 0,
-                      ),
-                      child: Flexible(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: colorPair,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: colorPair[0].withOpacity(0.3),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => _copyToClipboard(text, versionNum),
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                  horizontal: 20,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.content_copy_rounded,
-                                      color: Colors.white,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Copy $versionNum',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -496,6 +566,246 @@ class _PreviewWindowState extends State<PreviewWindow> {
               height: 1.6,
               letterSpacing: 0.2,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 80,
+            height: 80,
+            child: CircularProgressIndicator(
+              strokeWidth: 4,
+              valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Rewriting your text...',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'This may take a few seconds',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const SizedBox(height: 32),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SelectableText(
+              widget.originalText,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface.withOpacity(0.8),
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewToggleButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _isComparisonView = !_isComparisonView;
+          });
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: _isComparisonView
+                ? colorScheme.primaryContainer
+                : colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _isComparisonView
+                  ? colorScheme.primary
+                  : colorScheme.outline.withOpacity(0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _isComparisonView
+                    ? Icons.view_agenda_rounded
+                    : Icons.compare_arrows_rounded,
+                size: 16,
+                color: _isComparisonView
+                    ? colorScheme.onPrimaryContainer
+                    : colorScheme.onSurface,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _isComparisonView ? 'Stacked View' : 'Compare View',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: _isComparisonView
+                      ? colorScheme.onPrimaryContainer
+                      : colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComparisonView(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Original text
+        Expanded(
+          child: _buildTextSection(
+            context,
+            'Original',
+            widget.originalText,
+            Icons.text_fields_rounded,
+            const Color(0xFF6B7280),
+            false,
+          ),
+        ),
+        const SizedBox(width: 16),
+        // Rewritten versions side by side
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: widget.rewrittenTexts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final text = entry.value;
+              final colors = [
+                [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                [const Color(0xFF10B981), const Color(0xFF059669)],
+                [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
+              ];
+              final colorPair = colors[index % colors.length];
+              
+              return Padding(
+                padding: EdgeInsets.only(bottom: index < widget.rewrittenTexts.length - 1 ? 16 : 0),
+                child: _buildRewrittenSection(
+                  context,
+                  'Version ${index + 1}',
+                  text,
+                  index + 1,
+                  colorPair[0],
+                  colorPair[1],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKeyboardShortcutsHint(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.keyboard_rounded,
+                size: 18,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Keyboard Shortcuts',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            children: [
+              _buildShortcutHint(context, 'Cmd+Shift+R', 'Show/Hide Preview'),
+              _buildShortcutHint(context, 'Cmd+Shift+1', 'Copy Version 1'),
+              if (widget.rewrittenTexts.length > 1)
+                _buildShortcutHint(context, 'Cmd+Shift+2', 'Copy Version 2'),
+              _buildShortcutHint(context, 'Esc', 'Dismiss'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShortcutHint(BuildContext context, String shortcut, String action) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            shortcut,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onPrimaryContainer,
+              fontSize: 11,
+              fontFeatures: [const FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          action,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withOpacity(0.7),
+            fontSize: 12,
           ),
         ),
       ],

@@ -1,7 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:system_tray/system_tray.dart';
 import 'dart:io';
-import '../../utils/constants.dart';
 
 /// Manages system tray icon and menu
 class TrayManager {
@@ -10,20 +9,14 @@ class TrayManager {
   final Function()? onSettingsClick;
   final Function()? onQuitClick;
   final Function()? onToggleClick;
-  final Function(String)? onTextSelected;
-  final Function()? onViewAllClick;
 
   bool _isEnabled = false;
-  List<String> _rewrittenTexts = [];
-  String? _originalText;
   String _status = 'idle'; // 'idle', 'processing', 'ready', 'error'
 
   TrayManager({
     this.onSettingsClick,
     this.onQuitClick,
     this.onToggleClick,
-    this.onTextSelected,
-    this.onViewAllClick,
   });
 
   /// Get the icon path for the system tray
@@ -75,7 +68,9 @@ class TrayManager {
       );
 
       print('System tray initialized successfully');
-      print('System tray title: ${AppConstants.appName}');
+      
+      // Ensure title stays empty (no app name)
+      await _systemTray.setTitle('');
 
       await _createMenu();
       _systemTray.setContextMenu(_menu);
@@ -99,86 +94,30 @@ class TrayManager {
     }
   }
 
-  /// Create context menu
+  /// Create context menu - simplified to show only status and settings
   Future<void> _createMenu() async {
     final menuItems = <MenuItemBase>[];
 
     // Show status
-    if (_status == 'processing') {
-      menuItems.add(
-        MenuItemLabel(label: '⏳ Processing...', onClicked: (menuItem) {}),
-      );
-      menuItems.add(MenuSeparator());
-    } else if (_status == 'error') {
-      menuItems.add(
-        MenuItemLabel(label: '❌ Error occurred', onClicked: (menuItem) {}),
-      );
-      menuItems.add(MenuSeparator());
+    String statusLabel;
+    switch (_status) {
+      case 'processing':
+        statusLabel = '⏳ Processing...';
+        break;
+      case 'ready':
+        statusLabel = '✅ Ready';
+        break;
+      case 'error':
+        statusLabel = '❌ Error';
+        break;
+      default:
+        statusLabel = _isEnabled ? '✓ Active' : '○ Inactive';
     }
-
-    // Show rewritten text options if available
-    if (_rewrittenTexts.isNotEmpty) {
-      // Show original text snippet if available
-      if (_originalText != null) {
-        final originalSnippet = _originalText!.length > 60
-            ? '${_originalText!.substring(0, 57)}...'
-            : _originalText!;
-        menuItems.add(
-          MenuItemLabel(
-            label: 'Original: "$originalSnippet"',
-            onClicked: (menuItem) {},
-          ),
-        );
-        menuItems.add(MenuSeparator());
-      }
-
-      menuItems.add(
-        MenuItemLabel(
-          label: 'Select rewritten text:',
-          onClicked: (menuItem) {},
-        ),
-      );
-
-      // Add up to 2 rewritten text options
-      for (int i = 0; i < _rewrittenTexts.length && i < 2; i++) {
-        final text = _rewrittenTexts[i];
-        // Truncate long text for menu display (max 60 chars)
-        final displayText = text.length > 60
-            ? '${text.substring(0, 57)}...'
-            : text;
-
-        menuItems.add(
-          MenuItemLabel(
-            label: '${i + 1}. $displayText (Cmd+Shift+${i + 1})',
-            onClicked: (menuItem) {
-              onTextSelected?.call(text);
-            },
-          ),
-        );
-      }
-
-      // Add "View All" option
-      menuItems.add(
-        MenuItemLabel(
-          label: 'View All (Cmd+Shift+R)',
-          onClicked: (menuItem) {
-            onViewAllClick?.call();
-          },
-        ),
-      );
-
-      menuItems.add(MenuSeparator());
-    }
-
-    // Enable/Disable toggle
+    
     menuItems.add(
-      MenuItemLabel(
-        label: _isEnabled ? 'Disable' : 'Enable',
-        onClicked: (menuItem) {
-          onToggleClick?.call();
-        },
-      ),
+      MenuItemLabel(label: statusLabel, onClicked: (menuItem) {}),
     );
+    menuItems.add(MenuSeparator());
 
     // Settings
     menuItems.add(
@@ -212,45 +151,14 @@ class TrayManager {
     _systemTray.setContextMenu(_menu);
   }
 
-  /// Update rewritten texts and refresh menu
-  Future<void> updateRewrittenTexts(
-    List<String> texts, {
-    String? originalText,
-  }) async {
-    _rewrittenTexts = texts.take(2).toList(); // Keep only first 2
-    if (originalText != null) {
-      _originalText = originalText;
-    }
-    await _createMenu();
-    _systemTray.setContextMenu(_menu);
-  }
-
-  /// Set tooltip
-  Future<void> setTooltip(String tooltip) async {
-    await _systemTray.setTitle(tooltip);
-  }
 
   /// Update status and refresh menu
   Future<void> updateStatus(String status) async {
     _status = status;
     await _createMenu();
     _systemTray.setContextMenu(_menu);
-
-    // Update tooltip based on status
-    String tooltip;
-    switch (status) {
-      case 'processing':
-        tooltip = 'Rewriter: Processing...';
-        break;
-      case 'ready':
-        tooltip = 'Rewriter: ${_rewrittenTexts.length} version(s) ready';
-        break;
-      case 'error':
-        tooltip = 'Rewriter: Error occurred';
-        break;
-      default:
-        tooltip = _isEnabled ? 'Rewriter: Ready' : 'Rewriter: Disabled';
-    }
-    await setTooltip(tooltip);
+    
+    // Ensure title remains empty (no app name shown)
+    await _systemTray.setTitle('');
   }
 }

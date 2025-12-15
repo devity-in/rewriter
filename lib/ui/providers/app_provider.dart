@@ -36,6 +36,7 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> updateConfig(AppConfig newConfig) async {
     _config = newConfig;
+    await _storageService.saveConfig(newConfig);
     await _rewriterService.updateConfig(newConfig);
     notifyListeners();
     

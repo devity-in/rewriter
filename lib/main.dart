@@ -9,8 +9,6 @@ import 'core/services/notification_service.dart';
 import 'core/services/hotkey_service.dart';
 import 'ui/providers/app_provider.dart';
 import 'ui/tray/tray_manager.dart';
-import 'ui/preview/preview_manager.dart';
-import 'ui/preview/preview_window.dart';
 import 'ui/settings/settings_page.dart';
 import 'utils/constants.dart';
 
@@ -53,16 +51,13 @@ void main() async {
       storageService: storageService,
     );
 
-    // Initialize preview manager
-    final previewManager = PreviewManager(clipboardService: clipboardService);
-
     // Initialize app provider
     final appProvider = AppProvider(
       storageService: storageService,
       rewriterService: rewriterService,
     );
 
-    // Initialize tray manager
+    // Initialize tray manager - simplified
     final trayManager = TrayManager(
       onSettingsClick: () async {
         try {
@@ -70,7 +65,6 @@ void main() async {
           await windowManager.focus();
         } catch (e) {
           debugPrint('Error showing settings window: $e');
-          // Try to show anyway - might work on retry
         }
       },
       onQuitClick: () {
@@ -79,38 +73,29 @@ void main() async {
       onToggleClick: () {
         appProvider.toggleEnabled();
       },
-      onTextSelected: (String text) async {
-        // Copy selected text to clipboard
-        await clipboardService.setClipboardText(text);
-        debugPrint('Copied to clipboard: $text');
-      },
-      onViewAllClick: () async {
-        // Show preview window
-        if (previewManager.isShowing) {
-          await previewManager.hidePreview();
-        } else if (previewManager.currentOriginalText != null &&
-            previewManager.currentRewrittenTexts.isNotEmpty) {
-          await previewManager.showPreview(
-            originalText: previewManager.currentOriginalText!,
-            rewrittenTexts: previewManager.currentRewrittenTexts,
-          );
-        }
-      },
     );
 
-    // Connect rewriter service to tray manager
-    String? lastOriginalText;
-    rewriterService.onRewrittenTextsChanged = (List<String> texts) {
-      debugPrint('Rewritten texts available: ${texts.length}');
-      trayManager.updateRewrittenTexts(texts, originalText: lastOriginalText);
+    // Connect rewriter service to tray manager and notifications
+    String? lastRewrittenText;
 
-      // Show preview window if texts are available
-      if (texts.isNotEmpty && lastOriginalText != null) {
-        previewManager.showPreview(
-          originalText: lastOriginalText!,
-          rewrittenTexts: texts,
-        );
-      }
+    // Setup notification callbacks
+    notificationService.onCopyText = (String text) async {
+      await clipboardService.setClipboardText(text);
+      debugPrint('Copied to clipboard from notification: $text');
+      // Dismiss notification after copy
+      await notificationService.cancelAll();
+    };
+
+    notificationService.onCloseNotification = () async {
+      await notificationService.cancelAll();
+      debugPrint('Notification dismissed');
+    };
+
+    // Track rewritten text (single version)
+    rewriterService.onRewrittenTextChanged = (String text) {
+      debugPrint('Rewritten text available: "$text"');
+      lastRewrittenText = text;
+      // Text is already copied to clipboard by rewriter service
     };
 
     // Track status changes
@@ -119,39 +104,11 @@ void main() async {
       trayManager.updateStatus(status);
     };
 
-    // Track original text for preview
-    rewriterService.onOriginalTextChanged = (String originalText) {
-      lastOriginalText = originalText;
-    };
-
-    // Setup hotkey callbacks
-    hotkeyService.onShowPreview = () async {
-      if (previewManager.isShowing) {
-        await previewManager.hidePreview();
-      } else if (previewManager.currentOriginalText != null &&
-          previewManager.currentRewrittenTexts.isNotEmpty) {
-        await previewManager.showPreview(
-          originalText: previewManager.currentOriginalText!,
-          rewrittenTexts: previewManager.currentRewrittenTexts,
-        );
-      }
-    };
-
-    hotkeyService.onSelectVersion1 = () async {
-      if (previewManager.currentRewrittenTexts.isNotEmpty) {
-        await clipboardService.setClipboardText(
-          previewManager.currentRewrittenTexts[0],
-        );
-        await previewManager.hidePreview();
-      }
-    };
-
-    hotkeyService.onSelectVersion2 = () async {
-      if (previewManager.currentRewrittenTexts.length > 1) {
-        await clipboardService.setClipboardText(
-          previewManager.currentRewrittenTexts[1],
-        );
-        await previewManager.hidePreview();
+    // Setup hotkey callbacks - copy current rewritten text if available
+    hotkeyService.onCopyRewritten = () async {
+      if (lastRewrittenText != null) {
+        await clipboardService.setClipboardText(lastRewrittenText!);
+        debugPrint('Copied rewritten text via hotkey');
       }
     };
 
@@ -198,10 +155,7 @@ void main() async {
     runApp(
       ChangeNotifierProvider.value(
         value: appProvider,
-        child: RewriterApp(
-          previewManager: previewManager,
-          clipboardService: clipboardService,
-        ),
+        child: const RewriterApp(),
       ),
     );
 
@@ -249,14 +203,7 @@ void main() async {
 }
 
 class RewriterApp extends StatelessWidget {
-  final PreviewManager previewManager;
-  final ClipboardService clipboardService;
-
-  const RewriterApp({
-    super.key,
-    required this.previewManager,
-    required this.clipboardService,
-  });
+  const RewriterApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -291,23 +238,7 @@ class RewriterApp extends StatelessWidget {
           ),
         ),
       ),
-      home: Consumer<AppProvider>(
-        builder: (context, provider, child) {
-          // If preview is showing, show preview window, otherwise settings
-          if (previewManager.isShowing) {
-            return PreviewWindow(
-              originalText: previewManager.currentOriginalText ?? '',
-              rewrittenTexts: previewManager.currentRewrittenTexts,
-              clipboardService: clipboardService,
-              onDismiss: () async {
-                await previewManager.hidePreview();
-              },
-            );
-          }
-
-          return const SettingsPage();
-        },
-      ),
+      home: const SettingsPage(),
       debugShowCheckedModeBanner: false,
     );
   }
