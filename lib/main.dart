@@ -309,7 +309,8 @@ class _RewriterAppState extends State<RewriterApp> {
         builder: (context) => WelcomeDialog(
           onboardingService: widget.onboardingService,
           onComplete: () {
-            Navigator.of(context).pop(true);
+            // Callback called after dialog pops - no need to pop again
+            // The button already handles popping the dialog
           },
         ),
       );
