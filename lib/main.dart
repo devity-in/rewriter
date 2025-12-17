@@ -8,9 +8,12 @@ import 'core/services/language_detector.dart';
 import 'core/services/rewriter_service.dart';
 import 'core/services/notification_service.dart';
 import 'core/services/hotkey_service.dart';
+import 'core/services/rate_limit_service.dart';
+import 'core/services/onboarding_service.dart';
 import 'ui/providers/app_provider.dart';
 import 'ui/tray/tray_manager.dart';
 import 'ui/settings/settings_page.dart';
+import 'ui/onboarding/welcome_dialog.dart';
 import 'utils/constants.dart';
 
 void main() async {
@@ -23,21 +26,45 @@ void main() async {
     // Set window options for system tray app
     const windowOptions = WindowOptions(
       skipTaskbar: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor:
+          Colors.white, // Use white background instead of transparent
+      size: Size(800, 600),
+      minimumSize: Size(600, 400),
     );
 
     await windowManager.waitUntilReadyToShow(windowOptions);
 
-    // Hide window immediately - it's a system tray app
-    try {
-      await windowManager.hide();
-    } catch (e) {
-      debugPrint('Note: Window hide called early: $e');
-    }
-
     // Initialize notification service
     final notificationService = NotificationService();
     await notificationService.initialize();
+
+    // Initialize onboarding service
+    final onboardingService = OnboardingService();
+
+    // Check if onboarding is needed BEFORE hiding window
+    final hasCompletedOnboarding = await onboardingService
+        .hasCompletedOnboarding();
+
+    // Only hide window if onboarding is already complete
+    // Otherwise, show window for onboarding
+    if (hasCompletedOnboarding) {
+      try {
+        await windowManager.hide();
+      } catch (e) {
+        debugPrint('Note: Window hide called early: $e');
+      }
+    } else {
+      // Show window for onboarding
+      try {
+        await windowManager.setMinimumSize(const Size(600, 400));
+        await windowManager.setSize(const Size(800, 600));
+        await windowManager.center();
+        await windowManager.show();
+        await windowManager.focus();
+      } catch (e) {
+        debugPrint('Error showing window for onboarding: $e');
+      }
+    }
 
     // Initialize hotkey service
     final hotkeyService = HotkeyService();
@@ -46,10 +73,12 @@ void main() async {
     final storageService = StorageService();
     final clipboardService = ClipboardService();
     final languageDetector = LanguageDetector();
+    final rateLimitService = RateLimitService();
     final rewriterService = RewriterService(
       clipboardService: clipboardService,
       languageDetector: languageDetector,
       storageService: storageService,
+      rateLimitService: rateLimitService,
     );
 
     // Initialize app provider
@@ -62,7 +91,20 @@ void main() async {
     final trayManager = TrayManager(
       onSettingsClick: () async {
         try {
-          await windowManager.show();
+          // Check if window is already visible
+          final isVisible = await windowManager.isVisible();
+
+          if (!isVisible) {
+            // Ensure window has proper size and is visible
+            await windowManager.setMinimumSize(const Size(600, 400));
+            await windowManager.setSize(const Size(800, 600));
+            await windowManager.center();
+            // Show window
+            await windowManager.show();
+            // Small delay to ensure Flutter has time to render
+            await Future.delayed(const Duration(milliseconds: 100));
+          }
+          // Focus and bring to front
           await windowManager.focus();
         } catch (e) {
           debugPrint('Error showing settings window: $e');
@@ -115,7 +157,20 @@ void main() async {
 
     hotkeyService.onShowSettings = () async {
       try {
-        await windowManager.show();
+        // Check if window is already visible
+        final isVisible = await windowManager.isVisible();
+
+        if (!isVisible) {
+          // Ensure window has proper size and is visible
+          await windowManager.setMinimumSize(const Size(600, 400));
+          await windowManager.setSize(const Size(800, 600));
+          await windowManager.center();
+          // Show window
+          await windowManager.show();
+          // Small delay to ensure Flutter has time to render
+          await Future.delayed(const Duration(milliseconds: 100));
+        }
+        // Focus and bring to front
         await windowManager.focus();
       } catch (e) {
         debugPrint('Error showing settings via hotkey: $e');
@@ -156,22 +211,13 @@ void main() async {
     runApp(
       ChangeNotifierProvider.value(
         value: appProvider,
-        child: const RewriterApp(),
+        child: RewriterApp(
+          onboardingService: onboardingService,
+          appProvider: appProvider,
+          windowManager: windowManager,
+        ),
       ),
     );
-
-    // Hide window after app is running (delay to ensure app is fully initialized)
-    Future.delayed(const Duration(milliseconds: 500), () async {
-      try {
-        await windowManager.hide();
-        debugPrint('Window hidden successfully');
-        debugPrint(
-          'App is running in background. Check menu bar for tray icon.',
-        );
-      } catch (e) {
-        debugPrint('Error hiding window: $e');
-      }
-    });
 
     // Keep app alive - prevent it from exiting
     // This is important for system tray apps
@@ -203,12 +249,100 @@ void main() async {
   }
 }
 
-class RewriterApp extends StatelessWidget {
-  const RewriterApp({super.key});
+class RewriterApp extends StatefulWidget {
+  final OnboardingService onboardingService;
+  final AppProvider appProvider;
+  final WindowManager windowManager;
+
+  const RewriterApp({
+    super.key,
+    required this.onboardingService,
+    required this.appProvider,
+    required this.windowManager,
+  });
+
+  @override
+  State<RewriterApp> createState() => _RewriterAppState();
+}
+
+class _RewriterAppState extends State<RewriterApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndShowOnboarding();
+    });
+  }
+
+  Future<void> _checkAndShowOnboarding() async {
+    // Check if onboarding has been completed
+    final hasCompletedOnboarding = await widget.onboardingService
+        .hasCompletedOnboarding();
+
+    // Only show onboarding if it hasn't been completed yet
+    if (!hasCompletedOnboarding) {
+      // Ensure window is visible for onboarding
+      try {
+        await widget.windowManager.setMinimumSize(const Size(600, 400));
+        await widget.windowManager.setSize(const Size(800, 600));
+        await widget.windowManager.center();
+        await widget.windowManager.show();
+        await widget.windowManager.focus();
+      } catch (e) {
+        debugPrint('Error showing window for onboarding: $e');
+      }
+
+      // Wait for navigator to be ready
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      if (!mounted) return;
+
+      final navigator = _navigatorKey.currentState;
+      if (navigator == null || !navigator.mounted) return;
+
+      // Show welcome dialog
+      final shouldShowSettings = await showDialog<bool>(
+        context: navigator.context,
+        barrierDismissible: false,
+        builder: (context) => WelcomeDialog(
+          onboardingService: widget.onboardingService,
+          onComplete: () {
+            Navigator.of(context).pop(true);
+          },
+        ),
+      );
+
+      if (shouldShowSettings == true) {
+        // User clicked "Get Started" - just mark welcome as seen
+        // Settings page is already showing, so user can configure there
+        await widget.onboardingService.markWelcomeSeen();
+        // Don't mark onboarding complete yet - let user complete setup in settings
+        // Window stays visible so user can configure settings
+      } else {
+        // User skipped, mark welcome as seen and hide window
+        await widget.onboardingService.markWelcomeSeen();
+        try {
+          await widget.windowManager.hide();
+        } catch (e) {
+          debugPrint('Error hiding window after skip: $e');
+        }
+      }
+    } else {
+      // Onboarding already completed, ensure window is hidden
+      try {
+        await widget.windowManager.hide();
+      } catch (e) {
+        debugPrint('Error hiding window: $e');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: AppConstants.appName,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -240,7 +374,6 @@ class RewriterApp extends StatelessWidget {
         ),
       ),
       home: const SettingsPage(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }

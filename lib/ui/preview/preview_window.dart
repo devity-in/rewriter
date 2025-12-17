@@ -35,7 +35,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
     super.initState();
     // Auto-dismiss after 60 seconds (increased from 30)
     _resetAutoDismissTimer();
-    
+
     // Request focus to capture keyboard events
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -74,7 +74,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
 
   Future<void> _copyToClipboard(String text, int? version) async {
     await widget.clipboardService.setClipboardText(text);
-    
+
     // Show feedback
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -99,7 +99,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
         ),
       );
     }
-    
+
     await Future.delayed(const Duration(milliseconds: 300));
     await _dismiss();
   }
@@ -122,268 +122,285 @@ class _PreviewWindowState extends State<PreviewWindow> {
       child: Material(
         color: colorScheme.surface,
         child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 30,
-              offset: const Offset(0, 10),
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            // Modern Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    colorScheme.primary,
-                    colorScheme.primary.withOpacity(0.8),
-                  ],
-                ),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+                spreadRadius: 0,
               ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.auto_fix_high_rounded,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.isLoading ? 'Processing...' : 'Rewritten Text',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        Text(
-                          widget.isLoading
-                              ? 'Rewriting your text with AI'
-                              : '${widget.rewrittenTexts.length} version${widget.rewrittenTexts.length > 1 ? 's' : ''} available',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _dismiss,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Content
-            Expanded(
-              child: widget.isLoading
-                  ? _buildLoadingState(context)
-                  : SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // View toggle button
-                          if (widget.rewrittenTexts.isNotEmpty)
-                            Row(
-                              children: [
-                                const Spacer(),
-                                _buildViewToggleButton(context),
-                              ],
-                            ),
-                          if (widget.rewrittenTexts.isNotEmpty)
-                            const SizedBox(height: 16),
-
-                          // Original text section
-                          _buildTextSection(
-                            context,
-                            'Original Text',
-                            widget.originalText,
-                            Icons.text_fields_rounded,
-                            const Color(0xFF6B7280),
-                            false,
-                          ),
-                          const SizedBox(height: 20),
-
-                          // Rewritten versions
-                          if (_isComparisonView && widget.rewrittenTexts.isNotEmpty)
-                            _buildComparisonView(context)
-                          else
-                            ...widget.rewrittenTexts.asMap().entries.map((entry) {
-                              final index = entry.key;
-                              final text = entry.value;
-                              final colors = [
-                                [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                                [const Color(0xFF10B981), const Color(0xFF059669)],
-                                [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-                                [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
-                              ];
-                              final colorPair = colors[index % colors.length];
-                              
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 20),
-                                child: _buildRewrittenSection(
-                                  context,
-                                  'Version ${index + 1}',
-                                  text,
-                                  index + 1,
-                                  colorPair[0],
-                                  colorPair[1],
-                                ),
-                              );
-                            }),
-
-                          // Keyboard shortcuts hint
-                          if (widget.rewrittenTexts.isNotEmpty) ...[
-                            const SizedBox(height: 24),
-                            _buildKeyboardShortcutsHint(context),
-                          ],
-                        ],
-                      ),
-                    ),
-            ),
-
-            // Modern Footer with actions
-            if (!widget.isLoading)
+            ],
+          ),
+          child: Column(
+            children: [
+              // Modern Header
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 18,
+                ),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      colorScheme.primary,
+                      colorScheme.primary.withValues(alpha: 0.8),
+                    ],
                   ),
-                  border: Border(
-                    top: BorderSide(
-                      color: colorScheme.outline.withOpacity(0.1),
-                    ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
                   ),
                 ),
                 child: Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.auto_fix_high_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _dismiss,
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        label: const Text('Dismiss (Esc)'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.isLoading
+                                ? 'Processing...'
+                                : 'Rewritten Text',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            widget.isLoading
+                                ? 'Rewriting your text with AI'
+                                : '${widget.rewrittenTexts.length} version${widget.rewrittenTexts.length > 1 ? 's' : ''} available',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _dismiss,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                            size: 24,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    ...widget.rewrittenTexts.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final text = entry.value;
-                      final versionNum = index + 1;
-                      final colors = [
-                        [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
-                        [const Color(0xFF10B981), const Color(0xFF059669)],
-                        [const Color(0xFFF59E0B), const Color(0xFFD97706)],
-                        [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
-                      ];
-                      final colorPair = colors[index % colors.length];
-                      
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          left: index > 0 ? 12 : 0,
-                        ),
-                        child: Flexible(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: colorPair,
+                  ],
+                ),
+              ),
+
+              // Content
+              Expanded(
+                child: widget.isLoading
+                    ? _buildLoadingState(context)
+                    : SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // View toggle button
+                            if (widget.rewrittenTexts.isNotEmpty)
+                              Row(
+                                children: [
+                                  const Spacer(),
+                                  _buildViewToggleButton(context),
+                                ],
                               ),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: colorPair[0].withOpacity(0.3),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                            if (widget.rewrittenTexts.isNotEmpty)
+                              const SizedBox(height: 16),
+
+                            // Original text section
+                            _buildTextSection(
+                              context,
+                              'Original Text',
+                              widget.originalText,
+                              Icons.text_fields_rounded,
+                              const Color(0xFF6B7280),
+                              false,
                             ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _copyToClipboard(text, versionNum),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 14,
-                                    horizontal: 20,
+                            const SizedBox(height: 20),
+
+                            // Rewritten versions
+                            if (_isComparisonView &&
+                                widget.rewrittenTexts.isNotEmpty)
+                              _buildComparisonView(context)
+                            else
+                              ...widget.rewrittenTexts.asMap().entries.map((
+                                entry,
+                              ) {
+                                final index = entry.key;
+                                final text = entry.value;
+                                final colors = [
+                                  [
+                                    const Color(0xFF3B82F6),
+                                    const Color(0xFF2563EB),
+                                  ],
+                                  [
+                                    const Color(0xFF10B981),
+                                    const Color(0xFF059669),
+                                  ],
+                                  [
+                                    const Color(0xFFF59E0B),
+                                    const Color(0xFFD97706),
+                                  ],
+                                  [
+                                    const Color(0xFF8B5CF6),
+                                    const Color(0xFF7C3AED),
+                                  ],
+                                ];
+                                final colorPair = colors[index % colors.length];
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 20),
+                                  child: _buildRewrittenSection(
+                                    context,
+                                    'Version ${index + 1}',
+                                    text,
+                                    index + 1,
+                                    colorPair[0],
+                                    colorPair[1],
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.content_copy_rounded,
-                                        color: Colors.white,
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Copy $versionNum',
-                                        style: const TextStyle(
+                                );
+                              }),
+
+                            // Keyboard shortcuts hint
+                            if (widget.rewrittenTexts.isNotEmpty) ...[
+                              const SizedBox(height: 24),
+                              _buildKeyboardShortcutsHint(context),
+                            ],
+                          ],
+                        ),
+                      ),
+              ),
+
+              // Modern Footer with actions
+              if (!widget.isLoading)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                    border: Border(
+                      top: BorderSide(
+                        color: colorScheme.outline.withValues(alpha: 0.1),
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _dismiss,
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          label: const Text('Dismiss (Esc)'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ...widget.rewrittenTexts.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final text = entry.value;
+                        final versionNum = index + 1;
+                        final colors = [
+                          [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
+                          [const Color(0xFF10B981), const Color(0xFF059669)],
+                          [const Color(0xFFF59E0B), const Color(0xFFD97706)],
+                          [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
+                        ];
+                        final colorPair = colors[index % colors.length];
+
+                        return Padding(
+                          padding: EdgeInsets.only(left: index > 0 ? 12 : 0),
+                          child: Flexible(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(colors: colorPair),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: colorPair[0].withValues(alpha: 0.3),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () =>
+                                      _copyToClipboard(text, versionNum),
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                      horizontal: 20,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.content_copy_rounded,
                                           color: Colors.white,
-                                          fontWeight: FontWeight.w600,
+                                          size: 18,
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Copy $versionNum',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    }),
-                  ],
+                        );
+                      }),
+                    ],
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -407,7 +424,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, size: 18, color: color),
@@ -429,13 +446,13 @@ class _PreviewWindowState extends State<PreviewWindow> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isRewritten
-                ? color.withOpacity(0.08)
+                ? color.withValues(alpha: 0.08)
                 : colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: isRewritten
-                  ? color.withOpacity(0.2)
-                  : colorScheme.outline.withOpacity(0.1),
+                  ? color.withValues(alpha: 0.2)
+                  : colorScheme.outline.withValues(alpha: 0.1),
               width: isRewritten ? 1.5 : 1,
             ),
           ),
@@ -477,7 +494,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
                 borderRadius: BorderRadius.circular(8),
                 boxShadow: [
                   BoxShadow(
-                    color: primaryColor.withOpacity(0.3),
+                    color: primaryColor.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -514,7 +531,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: primaryColor.withOpacity(0.1),
+                    color: primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -549,13 +566,13 @@ class _PreviewWindowState extends State<PreviewWindow> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                primaryColor.withOpacity(0.1),
-                secondaryColor.withOpacity(0.05),
+                primaryColor.withValues(alpha: 0.1),
+                secondaryColor.withValues(alpha: 0.05),
               ],
             ),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: primaryColor.withOpacity(0.3),
+              color: primaryColor.withValues(alpha: 0.3),
               width: 2,
             ),
           ),
@@ -600,7 +617,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
           Text(
             'This may take a few seconds',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.6),
+              color: colorScheme.onSurface.withValues(alpha: 0.6),
             ),
           ),
           const SizedBox(height: 32),
@@ -613,7 +630,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
             child: SelectableText(
               widget.originalText,
               style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurface.withOpacity(0.8),
+                color: colorScheme.onSurface.withValues(alpha: 0.8),
                 height: 1.5,
               ),
             ),
@@ -646,7 +663,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
             border: Border.all(
               color: _isComparisonView
                   ? colorScheme.primary
-                  : colorScheme.outline.withOpacity(0.2),
+                  : colorScheme.outline.withValues(alpha: 0.2),
             ),
           ),
           child: Row(
@@ -708,9 +725,11 @@ class _PreviewWindowState extends State<PreviewWindow> {
                 [const Color(0xFF8B5CF6), const Color(0xFF7C3AED)],
               ];
               final colorPair = colors[index % colors.length];
-              
+
               return Padding(
-                padding: EdgeInsets.only(bottom: index < widget.rewrittenTexts.length - 1 ? 16 : 0),
+                padding: EdgeInsets.only(
+                  bottom: index < widget.rewrittenTexts.length - 1 ? 16 : 0,
+                ),
                 child: _buildRewrittenSection(
                   context,
                   'Version ${index + 1}',
@@ -736,9 +755,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-        ),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -777,7 +794,11 @@ class _PreviewWindowState extends State<PreviewWindow> {
     );
   }
 
-  Widget _buildShortcutHint(BuildContext context, String shortcut, String action) {
+  Widget _buildShortcutHint(
+    BuildContext context,
+    String shortcut,
+    String action,
+  ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -804,7 +825,7 @@ class _PreviewWindowState extends State<PreviewWindow> {
         Text(
           action,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurface.withOpacity(0.7),
+            color: colorScheme.onSurface.withValues(alpha: 0.7),
             fontSize: 12,
           ),
         ),

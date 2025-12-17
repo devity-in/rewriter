@@ -7,15 +7,15 @@ import '../../core/services/rewriter_service.dart';
 class AppProvider extends ChangeNotifier {
   final StorageService _storageService;
   final RewriterService _rewriterService;
-  
+
   AppConfig? _config;
   bool _isInitialized = false;
 
   AppProvider({
     required StorageService storageService,
     required RewriterService rewriterService,
-  })  : _storageService = storageService,
-        _rewriterService = rewriterService {
+  }) : _storageService = storageService,
+       _rewriterService = rewriterService {
     _initialize();
   }
 
@@ -23,12 +23,13 @@ class AppProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get isEnabled => _config?.enabled ?? false;
   bool get hasApiKey => _config?.isValid ?? false;
+  RewriterService get rewriterService => _rewriterService;
 
   Future<void> _initialize() async {
     _config = await _storageService.loadConfig();
     _isInitialized = true;
     notifyListeners();
-    
+
     if (_config?.enabled ?? false) {
       _rewriterService.start();
     }
@@ -39,7 +40,7 @@ class AppProvider extends ChangeNotifier {
     await _storageService.saveConfig(newConfig);
     await _rewriterService.updateConfig(newConfig);
     notifyListeners();
-    
+
     if (newConfig.enabled) {
       _rewriterService.start();
     } else {
@@ -53,9 +54,9 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
+  @override
   void dispose() {
     _rewriterService.dispose();
     super.dispose();
   }
 }
-

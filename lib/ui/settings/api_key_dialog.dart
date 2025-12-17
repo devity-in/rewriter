@@ -25,9 +25,7 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
     final colorScheme = theme.colorScheme;
 
     return Dialog(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 480),
         padding: const EdgeInsets.all(24),
@@ -48,7 +46,7 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
               Text(
                 'Get your key from makersuite.google.com/app/apikey',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.6),
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
               const SizedBox(height: 20),
@@ -60,18 +58,27 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                 decoration: InputDecoration(
                   labelText: 'Enter API key',
                   filled: true,
-                  fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                  fillColor: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
+                    borderSide: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.1),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
+                    borderSide: BorderSide(
+                      color: colorScheme.outline.withValues(alpha: 0.1),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+                    borderSide: BorderSide(
+                      color: colorScheme.primary,
+                      width: 1.5,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -79,7 +86,9 @@ class _ApiKeyDialogState extends State<ApiKeyDialog> {
                   ),
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscureText ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      _obscureText
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
                       size: 20,
                     ),
                     onPressed: () {

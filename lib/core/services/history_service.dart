@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/rewrite_history_item.dart';
 
@@ -16,7 +17,7 @@ class HistoryService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final historyJson = prefs.getStringList(_historyKey) ?? [];
-      
+
       final item = RewriteHistoryItem(
         originalText: originalText,
         rewrittenTexts: rewrittenTexts,
@@ -35,7 +36,7 @@ class HistoryService {
       await prefs.setStringList(_historyKey, historyJson);
     } catch (e) {
       // Silently handle errors - history is not critical
-      print('Error saving history: $e');
+      debugPrint('Error saving history: $e');
     }
   }
 
@@ -59,7 +60,7 @@ class HistoryService {
 
       return history;
     } catch (e) {
-      print('Error loading history: $e');
+      debugPrint('Error loading history: $e');
       return [];
     }
   }
@@ -70,7 +71,7 @@ class HistoryService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_historyKey);
     } catch (e) {
-      print('Error clearing history: $e');
+      debugPrint('Error clearing history: $e');
     }
   }
 
@@ -79,7 +80,3 @@ class HistoryService {
     return await getHistory(limit: 5);
   }
 }
-
-
-
-

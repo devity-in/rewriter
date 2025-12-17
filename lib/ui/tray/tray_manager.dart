@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:system_tray/system_tray.dart';
 import 'dart:io';
@@ -13,11 +14,7 @@ class TrayManager {
   bool _isEnabled = false;
   String _status = 'idle'; // 'idle', 'processing', 'ready', 'error'
 
-  TrayManager({
-    this.onSettingsClick,
-    this.onQuitClick,
-    this.onToggleClick,
-  });
+  TrayManager({this.onSettingsClick, this.onQuitClick, this.onToggleClick});
 
   /// Get the icon path for the system tray
   Future<String> _getIconPath() async {
@@ -42,9 +39,9 @@ class TrayManager {
         throw Exception('Failed to create icon file at ${iconFile.path}');
       }
 
-      print('Icon saved to: ${iconFile.path}');
-      print('Icon file exists: ${await iconFile.exists()}');
-      print('Icon file size: ${await iconFile.length()} bytes');
+      debugPrint('Icon saved to: ${iconFile.path}');
+      debugPrint('Icon file exists: ${await iconFile.exists()}');
+      debugPrint('Icon file size: ${await iconFile.length()} bytes');
 
       return iconFile.path;
     }
@@ -55,11 +52,11 @@ class TrayManager {
   Future<void> initialize() async {
     try {
       final iconPath = await _getIconPath();
-      print('Using icon path: $iconPath');
+      debugPrint('Using icon path: $iconPath');
 
-      print('Initializing system tray with icon: $iconPath');
+      debugPrint('Initializing system tray with icon: $iconPath');
       if (Platform.isMacOS) {
-        print('Icon file exists: ${await File(iconPath).exists()}');
+        debugPrint('Icon file exists: ${await File(iconPath).exists()}');
       }
 
       await _systemTray.initSystemTray(
@@ -67,17 +64,17 @@ class TrayManager {
         iconPath: iconPath,
       );
 
-      print('System tray initialized successfully');
-      
+      debugPrint('System tray initialized successfully');
+
       // Ensure title stays empty (no app name)
       await _systemTray.setTitle('');
 
       await _createMenu();
       _systemTray.setContextMenu(_menu);
-      print('Context menu set successfully');
+      debugPrint('Context menu set successfully');
 
       // Verify the tray is set up
-      print('Tray setup complete. Icon should be visible in menu bar.');
+      debugPrint('Tray setup complete. Icon should be visible in menu bar.');
 
       // Handle tray icon click
       _systemTray.registerSystemTrayEventHandler((eventName) {
@@ -88,8 +85,8 @@ class TrayManager {
         }
       });
     } catch (e, stackTrace) {
-      print('Error in tray initialization: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error in tray initialization: $e');
+      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
@@ -113,10 +110,8 @@ class TrayManager {
       default:
         statusLabel = _isEnabled ? '✓ Active' : '○ Inactive';
     }
-    
-    menuItems.add(
-      MenuItemLabel(label: statusLabel, onClicked: (menuItem) {}),
-    );
+
+    menuItems.add(MenuItemLabel(label: statusLabel, onClicked: (menuItem) {}));
     menuItems.add(MenuSeparator());
 
     // Settings
@@ -151,13 +146,12 @@ class TrayManager {
     _systemTray.setContextMenu(_menu);
   }
 
-
   /// Update status and refresh menu
   Future<void> updateStatus(String status) async {
     _status = status;
     await _createMenu();
     _systemTray.setContextMenu(_menu);
-    
+
     // Ensure title remains empty (no app name shown)
     await _systemTray.setTitle('');
   }

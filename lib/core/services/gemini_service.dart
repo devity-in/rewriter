@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/rewrite_result.dart';
+import 'rate_limit_service.dart';
 
 /// Service for interacting with Google Gemini API
 class GeminiService {
@@ -17,9 +18,10 @@ class GeminiService {
   ];
 
   final String apiKey;
+  final RateLimitService? rateLimitService;
   String? _cachedModel;
 
-  GeminiService({required this.apiKey});
+  GeminiService({required this.apiKey, this.rateLimitService});
 
   /// Get the model name to use (with fallback)
   Future<String> _getModelName() async {
@@ -99,6 +101,19 @@ class GeminiService {
     String style = 'professional',
   }) async {
     try {
+      // Check rate limit before making request
+      if (rateLimitService != null) {
+        final rateLimitCheck = await rateLimitService!.canMakeRequest();
+        if (!rateLimitCheck.allowed) {
+          final reason = rateLimitCheck.reason == RateLimitReason.perMinuteLimit
+              ? 'Rate limit: Too many requests per minute'
+              : rateLimitCheck.reason == RateLimitReason.perHourLimit
+              ? 'Rate limit: Too many requests per hour'
+              : 'Rate limit: Daily limit reached';
+          return RewriteResult.failure(originalText: text, error: reason);
+        }
+      }
+
       final modelName = await _getModelName();
       // Model name from API might be "models/gemini-1.5-flash" or just "gemini-1.5-flash"
       // If it includes "models/", use it directly, otherwise add "models/" prefix
@@ -133,6 +148,11 @@ class GeminiService {
           );
 
       if (response.statusCode == 200) {
+        // Record successful request
+        if (rateLimitService != null) {
+          await rateLimitService!.recordRequest();
+        }
+
         final jsonResponse = jsonDecode(response.body);
         final rewrittenText = _extractText(jsonResponse);
 
@@ -200,6 +220,11 @@ class GeminiService {
           );
 
       if (response.statusCode == 200) {
+        // Record successful request
+        if (rateLimitService != null) {
+          await rateLimitService!.recordRequest();
+        }
+
         final jsonResponse = jsonDecode(response.body);
         final rewrittenText = _extractText(jsonResponse);
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../ui/providers/app_provider.dart';
+import '../../core/services/gemini_service.dart';
+import '../../core/services/onboarding_service.dart';
 import 'api_key_dialog.dart';
 
 /// Minimal settings page with clean design
@@ -82,9 +84,7 @@ class _SettingsPageState extends State<SettingsPage> {
           final config = provider.config;
           if (config == null) {
             return Center(
-              child: CircularProgressIndicator(
-                color: colorScheme.primary,
-              ),
+              child: CircularProgressIndicator(color: colorScheme.primary),
             );
           }
 
@@ -142,6 +142,21 @@ class _SettingsPageState extends State<SettingsPage> {
                             await provider.updateConfig(
                               config.copyWith(apiKey: newKey),
                             );
+                            // Mark onboarding as complete when API key is configured
+                            // This ensures onboarding only shows once
+                            final onboardingService = OnboardingService();
+                            final hasCompleted = await onboardingService
+                                .hasCompletedOnboarding();
+                            if (!hasCompleted) {
+                              await onboardingService.markOnboardingComplete();
+                              // Hide window after API key is configured (onboarding complete)
+                              try {
+                                // Access windowManager through context if needed, or keep window visible
+                                // For now, keep window visible so user can continue configuring
+                              } catch (e) {
+                                // Ignore errors
+                              }
+                            }
                           }
                         },
                       ),
@@ -166,6 +181,26 @@ class _SettingsPageState extends State<SettingsPage> {
                           );
                         },
                       ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                  // Rate Limit & Usage Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _RateLimitSection(provider: provider),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                  // Test Button
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _TestSection(provider: provider),
                     ),
                   ),
 
@@ -236,17 +271,17 @@ class _StatusCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: colorScheme.outline.withOpacity(0.1),
-        ),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [
           Icon(
             isActive ? Icons.check_circle_outline : Icons.error_outline,
-            color: isActive ? const Color(0xFF10B981) : colorScheme.onSurface.withOpacity(0.5),
+            color: isActive
+                ? const Color(0xFF10B981)
+                : colorScheme.onSurface.withValues(alpha: 0.5),
             size: 24,
           ),
           const SizedBox(width: 16),
@@ -258,8 +293,8 @@ class _StatusCard extends StatelessWidget {
                   isActive
                       ? 'Active'
                       : hasApiKey
-                          ? 'Disabled'
-                          : 'Setup Required',
+                      ? 'Disabled'
+                      : 'Setup Required',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
@@ -270,10 +305,10 @@ class _StatusCard extends StatelessWidget {
                   isActive
                       ? 'Monitoring clipboard'
                       : hasApiKey
-                          ? 'Enable to start'
-                          : 'Configure API key',
+                      ? 'Enable to start'
+                      : 'Configure API key',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withOpacity(0.6),
+                    color: colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ],
@@ -282,7 +317,7 @@ class _StatusCard extends StatelessWidget {
           Switch(
             value: isEnabled,
             onChanged: hasApiKey ? onToggle : null,
-            activeColor: const Color(0xFF10B981),
+            activeThumbColor: const Color(0xFF10B981),
           ),
         ],
       ),
@@ -294,10 +329,7 @@ class _ApiKeySection extends StatelessWidget {
   final bool hasApiKey;
   final VoidCallback onConfigure;
 
-  const _ApiKeySection({
-    required this.hasApiKey,
-    required this.onConfigure,
-  });
+  const _ApiKeySection({required this.hasApiKey, required this.onConfigure});
 
   @override
   Widget build(BuildContext context) {
@@ -323,17 +355,21 @@ class _ApiKeySection extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: colorScheme.outline.withOpacity(0.1),
+                  color: colorScheme.outline.withValues(alpha: 0.1),
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
                     hasApiKey ? Icons.key : Icons.key_off,
-                    color: hasApiKey ? const Color(0xFF10B981) : colorScheme.onSurface.withOpacity(0.5),
+                    color: hasApiKey
+                        ? const Color(0xFF10B981)
+                        : colorScheme.onSurface.withValues(alpha: 0.5),
                     size: 20,
                   ),
                   const SizedBox(width: 12),
@@ -347,7 +383,7 @@ class _ApiKeySection extends StatelessWidget {
                   ),
                   Icon(
                     Icons.chevron_right,
-                    color: colorScheme.onSurface.withOpacity(0.4),
+                    color: colorScheme.onSurface.withValues(alpha: 0.4),
                     size: 20,
                   ),
                 ],
@@ -430,13 +466,13 @@ class _StyleCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isSelected
-                ? option.color.withOpacity(0.1)
-                : colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                ? option.color.withValues(alpha: 0.1)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: isSelected
                   ? option.color
-                  : colorScheme.outline.withOpacity(0.1),
+                  : colorScheme.outline.withValues(alpha: 0.1),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -446,7 +482,9 @@ class _StyleCard extends StatelessWidget {
               Icon(
                 option.icon,
                 size: 18,
-                color: isSelected ? option.color : colorScheme.onSurface.withOpacity(0.6),
+                color: isSelected
+                    ? option.color
+                    : colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               const SizedBox(width: 8),
               Text(
@@ -458,11 +496,7 @@ class _StyleCard extends StatelessWidget {
               ),
               if (isSelected) ...[
                 const SizedBox(width: 6),
-                Icon(
-                  Icons.check,
-                  size: 16,
-                  color: option.color,
-                ),
+                Icon(Icons.check, size: 16, color: option.color),
               ],
             ],
           ),
@@ -521,7 +555,7 @@ class _AdvancedSettingsSection extends StatelessWidget {
                     duration: const Duration(milliseconds: 200),
                     child: Icon(
                       Icons.keyboard_arrow_down,
-                      color: colorScheme.onSurface.withOpacity(0.6),
+                      color: colorScheme.onSurface.withValues(alpha: 0.6),
                       size: 20,
                     ),
                   ),
@@ -545,7 +579,9 @@ class _AdvancedSettingsSection extends StatelessWidget {
                       onChanged: (value) {
                         final ms = int.tryParse(value);
                         if (ms != null && ms > 0) {
-                          provider.updateConfig(config.copyWith(debounceMs: ms));
+                          provider.updateConfig(
+                            config.copyWith(debounceMs: ms),
+                          );
                         }
                       },
                     ),
@@ -616,25 +652,333 @@ class _AdvancedSettingField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         suffixText: suffix,
-        prefixIcon: Icon(icon, size: 18, color: colorScheme.onSurface.withOpacity(0.6)),
+        prefixIcon: Icon(
+          icon,
+          size: 18,
+          color: colorScheme.onSurface.withValues(alpha: 0.6),
+        ),
         filled: true,
-        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
+          borderSide: BorderSide(
+            color: colorScheme.outline.withValues(alpha: 0.1),
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.1)),
+          borderSide: BorderSide(
+            color: colorScheme.outline.withValues(alpha: 0.1),
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         isDense: true,
       ),
     );
   }
 }
 
+class _RateLimitSection extends StatefulWidget {
+  final AppProvider provider;
+
+  const _RateLimitSection({required this.provider});
+
+  @override
+  State<_RateLimitSection> createState() => _RateLimitSectionState();
+}
+
+class _RateLimitSectionState extends State<_RateLimitSection> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return FutureBuilder(
+      future: widget.provider.rewriterService.rateLimitService.getStats(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+
+        final stats = snapshot.data!;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'API Usage',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.1),
+                ),
+              ),
+              child: Column(
+                children: [
+                  _UsageRow(
+                    label: 'Today',
+                    current: stats.requestsPerDay,
+                    max: stats.maxRequestsPerDay,
+                    percentage: stats.dayUsagePercentage,
+                  ),
+                  const SizedBox(height: 12),
+                  _UsageRow(
+                    label: 'This Hour',
+                    current: stats.requestsPerHour,
+                    max: stats.maxRequestsPerHour,
+                    percentage: stats.hourUsagePercentage,
+                  ),
+                  const SizedBox(height: 12),
+                  _UsageRow(
+                    label: 'This Minute',
+                    current: stats.requestsPerMinute,
+                    max: stats.maxRequestsPerMinute,
+                    percentage: stats.minuteUsagePercentage,
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total Requests',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      Text(
+                        '${stats.totalRequests}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _UsageRow extends StatelessWidget {
+  final String label;
+  final int current;
+  final int max;
+  final double percentage;
+
+  const _UsageRow({
+    required this.label,
+    required this.current,
+    required this.max,
+    required this.percentage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isWarning = percentage >= 80;
+    final isCritical = percentage >= 95;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            Text(
+              '$current / $max',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: isCritical
+                    ? Colors.red
+                    : isWarning
+                    ? Colors.orange
+                    : colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: percentage / 100,
+            minHeight: 6,
+            backgroundColor: colorScheme.outline.withValues(alpha: 0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              isCritical
+                  ? Colors.red
+                  : isWarning
+                  ? Colors.orange
+                  : colorScheme.primary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TestSection extends StatefulWidget {
+  final AppProvider provider;
+
+  const _TestSection({required this.provider});
+
+  @override
+  State<_TestSection> createState() => _TestSectionState();
+}
+
+class _TestSectionState extends State<_TestSection> {
+  bool _isTesting = false;
+  String? _testResult;
+
+  Future<void> _testRewrite() async {
+    if (!widget.provider.hasApiKey) {
+      _showError('Please configure your API key first');
+      return;
+    }
+
+    setState(() {
+      _isTesting = true;
+      _testResult = null;
+    });
+
+    try {
+      final rewriterService = widget.provider.rewriterService;
+      final geminiService = GeminiService(
+        apiKey: widget.provider.config!.apiKey!,
+        rateLimitService: rewriterService.rateLimitService,
+      );
+
+      const testText =
+          'This is a test sentence to verify the rewriting functionality.';
+      final result = await geminiService.rewriteText(
+        testText,
+        style: widget.provider.config?.rewriteStyle ?? 'professional',
+      );
+
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testResult = result.success
+              ? 'Success! Rewritten: "${result.rewrittenText}"'
+              : 'Error: ${result.error}';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testResult = 'Error: $e';
+        });
+      }
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Test Rewriting',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _isTesting ? null : _testRewrite,
+          icon: _isTesting
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colorScheme.primary,
+                  ),
+                )
+              : const Icon(Icons.play_arrow_rounded, size: 18),
+          label: Text(_isTesting ? 'Testing...' : 'Test Rewrite'),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          ),
+        ),
+        if (_testResult != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _testResult!.contains('Success')
+                  ? const Color(0xFF10B981).withValues(alpha: 0.1)
+                  : Colors.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  _testResult!.contains('Success')
+                      ? Icons.check_circle
+                      : Icons.error_outline,
+                  size: 20,
+                  color: _testResult!.contains('Success')
+                      ? const Color(0xFF10B981)
+                      : Colors.red,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _testResult!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}

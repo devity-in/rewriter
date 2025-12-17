@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import '../../core/services/clipboard_service.dart';
@@ -48,7 +47,7 @@ class PreviewManager {
       // Calculate optimal window size based on content
       final estimatedHeight = 200 + (rewrittenTexts.length * 150) + 100;
       final height = estimatedHeight.clamp(400, 800).toDouble();
-      
+
       await windowManager.setSize(Size(600, height));
       await _positionWindow();
       await windowManager.setAlwaysOnTop(true);

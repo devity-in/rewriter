@@ -7,12 +7,14 @@ import 'gemini_service.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
 import 'history_service.dart';
+import 'rate_limit_service.dart';
 
 /// Main service that orchestrates clipboard monitoring and rewriting
 class RewriterService {
   final ClipboardService _clipboardService;
   final LanguageDetector _languageDetector;
   final StorageService _storageService;
+  final RateLimitService _rateLimitService;
 
   GeminiService? _geminiService;
   AppConfig? _config;
@@ -20,13 +22,13 @@ class RewriterService {
   String? _pendingText;
   bool _isProcessing = false;
 
-    // Store rewritten text (single version)
-    String? _rewrittenText;
-    String? _lastOriginalText;
-    Function(String)? _onRewrittenTextChanged;
-    Function(String)?
-    _onStatusChanged; // Status: 'idle', 'processing', 'ready', 'error'
-    Function(String)? _onOriginalTextChanged; // Callback for original text
+  // Store rewritten text (single version)
+  String? _rewrittenText;
+  String? _lastOriginalText;
+  Function(String)? _onRewrittenTextChanged;
+  Function(String)?
+  _onStatusChanged; // Status: 'idle', 'processing', 'ready', 'error'
+  Function(String)? _onOriginalTextChanged; // Callback for original text
 
   final NotificationService _notificationService = NotificationService();
   final HistoryService _historyService = HistoryService();
@@ -40,9 +42,11 @@ class RewriterService {
     required ClipboardService clipboardService,
     required LanguageDetector languageDetector,
     required StorageService storageService,
+    RateLimitService? rateLimitService,
   }) : _clipboardService = clipboardService,
        _languageDetector = languageDetector,
-       _storageService = storageService {
+       _storageService = storageService,
+       _rateLimitService = rateLimitService ?? RateLimitService() {
     _initialize();
   }
 
@@ -54,11 +58,17 @@ class RewriterService {
 
   void _updateGeminiService() {
     if (_config?.isValid == true) {
-      _geminiService = GeminiService(apiKey: _config!.apiKey!);
+      _geminiService = GeminiService(
+        apiKey: _config!.apiKey!,
+        rateLimitService: _rateLimitService,
+      );
     } else {
       _geminiService = null;
     }
   }
+
+  /// Get rate limit service (for UI access)
+  RateLimitService get rateLimitService => _rateLimitService;
 
   void _setupClipboardListener() {
     _clipboardService.onClipboardChanged = _handleClipboardChange;
@@ -184,14 +194,16 @@ class RewriterService {
       debugPrint('RewriterService: Received result from API');
       debugPrint('Success: ${result.success}');
       debugPrint('Original: "${result.originalText}"');
-      
+
       if (result.success) {
         _rewrittenText = result.rewrittenText;
-        debugPrint('Rewritten: "${_rewrittenText}"');
+        debugPrint('Rewritten: "$_rewrittenText"');
 
         // Automatically copy to clipboard
         await _clipboardService.setClipboardText(_rewrittenText!);
-        debugPrint('RewriterService: Automatically copied rewritten text to clipboard');
+        debugPrint(
+          'RewriterService: Automatically copied rewritten text to clipboard',
+        );
 
         // Notify callback
         _onRewrittenTextChanged?.call(_rewrittenText!);
@@ -214,10 +226,14 @@ class RewriterService {
         _rewrittenText = null;
         _onStatusChanged?.call('error');
 
+        // Check if it's a rate limit error
+        final isRateLimit = result.error?.contains('Rate limit') ?? false;
+        final errorMessage = isRateLimit
+            ? 'Rate limit reached. Please wait before trying again.'
+            : 'Failed to rewrite text. Check API key and connection.';
+
         // Show error notification
-        await _notificationService.showErrorNotification(
-          'Failed to rewrite text. Check API key and connection.',
-        );
+        await _notificationService.showErrorNotification(errorMessage);
       }
     } catch (e) {
       debugPrint('RewriterService: Error processing text: $e');
