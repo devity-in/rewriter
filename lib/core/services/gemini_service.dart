@@ -3,9 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/rewrite_result.dart';
 import 'rate_limit_service.dart';
+import 'ai_service.dart';
 
 /// Service for interacting with Google Gemini API
-class GeminiService {
+class GeminiService implements AIService {
   static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1';
   // Try different model names - will auto-detect available one
   static const List<String> _modelCandidates = [
@@ -96,6 +97,7 @@ class GeminiService {
   }
 
   /// Rewrite text using Gemini API
+  @override
   Future<RewriteResult> rewriteText(
     String text, {
     String style = 'professional',
@@ -357,6 +359,7 @@ class GeminiService {
   }
 
   /// Test API connection
+  @override
   Future<bool> testConnection() async {
     try {
       final result = await rewriteText('Test', style: 'professional');

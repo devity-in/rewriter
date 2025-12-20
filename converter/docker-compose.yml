@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  converter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phi3-converter
+    volumes:
+      # Mount project root so output goes to assets/models/
+      - ../:/workspace
+      # Mount model directory (read-only)
+      - /Users/bw/abhishekthakur/Phi-3-mini-4k-instruct:/model:ro
+    working_dir: /workspace/converter
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python convert_phi3.py
+    # Remove container after completion
+    restart: "no"

@@ -19,6 +19,7 @@ class StorageService {
   static const String _minSentenceLengthKey = 'min_sentence_length';
   static const String _maxSentenceLengthKey = 'max_sentence_length';
   static const String _rewriteStyleKey = 'rewrite_style';
+  static const String _modelTypeKey = 'model_type';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -108,20 +109,28 @@ class StorageService {
     await prefs.setInt(_minSentenceLengthKey, config.minSentenceLength);
     await prefs.setInt(_maxSentenceLengthKey, config.maxSentenceLength);
     await prefs.setString(_rewriteStyleKey, config.rewriteStyle);
+    await prefs.setString(_modelTypeKey, config.modelType);
 
     // Always save API key if provided, even if empty (to clear it)
-    if (config.apiKey != null) {
-      await saveApiKey(config.apiKey!);
-    } else {
-      // If apiKey is explicitly null, delete it
-      await deleteApiKey();
+    // Only save API key for Gemini model
+    if (config.modelType == 'gemini') {
+      if (config.apiKey != null) {
+        await saveApiKey(config.apiKey!);
+      } else {
+        // If apiKey is explicitly null, delete it
+        await deleteApiKey();
+      }
     }
   }
 
   /// Load app configuration
   Future<AppConfig> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    final apiKey = await getApiKey();
+    final modelType =
+        prefs.getString(_modelTypeKey) ?? 'phi3'; // Default to local AI
+
+    // Only load API key for Gemini model
+    final apiKey = modelType == 'gemini' ? await getApiKey() : null;
 
     final config = AppConfig(
       enabled: prefs.getBool(_enabledKey) ?? true,
@@ -130,10 +139,11 @@ class StorageService {
       minSentenceLength: prefs.getInt(_minSentenceLengthKey) ?? 10,
       maxSentenceLength: prefs.getInt(_maxSentenceLengthKey) ?? 500,
       rewriteStyle: prefs.getString(_rewriteStyleKey) ?? 'professional',
+      modelType: modelType,
     );
 
     debugPrint(
-      'StorageService: Config loaded - enabled: ${config.enabled}, hasApiKey: ${config.isValid}',
+      'StorageService: Config loaded - enabled: ${config.enabled}, modelType: ${config.modelType}, hasApiKey: ${config.isValid}',
     );
 
     return config;

@@ -4,6 +4,8 @@ import '../models/app_config.dart';
 import 'clipboard_service.dart';
 import 'language_detector.dart';
 import 'gemini_service.dart';
+import 'local_ai_service.dart';
+import 'ai_service.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
 import 'history_service.dart';
@@ -16,6 +18,8 @@ class RewriterService {
   final StorageService _storageService;
   final RateLimitService _rateLimitService;
 
+  AIService? _aiService;
+  LocalAIService? _localAIService;
   GeminiService? _geminiService;
   AppConfig? _config;
   Timer? _debounceTimer;
@@ -52,18 +56,56 @@ class RewriterService {
 
   Future<void> _initialize() async {
     _config = await _storageService.loadConfig();
-    _updateGeminiService();
+    _updateAIService();
     _setupClipboardListener();
   }
 
-  void _updateGeminiService() {
-    if (_config?.isValid == true) {
-      _geminiService = GeminiService(
-        apiKey: _config!.apiKey!,
-        rateLimitService: _rateLimitService,
-      );
-    } else {
+  void _updateAIService() {
+    if (_config == null) {
+      _aiService = null;
       _geminiService = null;
+      _localAIService = null;
+      return;
+    }
+
+    if (_config!.modelType == 'phi3') {
+      // Use local AI service (doesn't need API key)
+      _localAIService = LocalAIService();
+      _aiService = _localAIService;
+      _geminiService = null;
+      // Initialize local AI service asynchronously
+      // Don't block on initialization - let it happen in background
+      _localAIService!.initialize().catchError((e, stackTrace) {
+        debugPrint('RewriterService: Failed to initialize local AI: $e');
+        debugPrint('Stack trace: $stackTrace');
+        // If initialization fails, set service to null so user gets clear error
+        if (!_localAIService!.isInitialized) {
+          _aiService = null;
+          // Check if this is a native library issue
+          final errorStr = e.toString().toLowerCase();
+          if (errorStr.contains('native libraries not available') ||
+              errorStr.contains('macos desktop') ||
+              errorStr.contains('symbol not found')) {
+            debugPrint(
+              'RewriterService: Local AI not supported on this platform. '
+              'User should switch to Gemini API.',
+            );
+          }
+        }
+      });
+    } else {
+      // Use Gemini service (needs API key)
+      if (_config!.isValid) {
+        _geminiService = GeminiService(
+          apiKey: _config!.apiKey!,
+          rateLimitService: _rateLimitService,
+        );
+        _aiService = _geminiService;
+      } else {
+        _geminiService = null;
+        _aiService = null;
+      }
+      _localAIService = null;
     }
   }
 
@@ -104,11 +146,21 @@ class RewriterService {
       debugPrint('RewriterService: Already processing, skipping');
       return;
     }
-    if (_geminiService == null) {
+    if (_aiService == null) {
       debugPrint(
-        'RewriterService: No Gemini service available (API key not configured)',
+        'RewriterService: No AI service available (${_config?.modelType == 'phi3' ? 'Local AI model not initialized' : 'API key not configured'})',
       );
       return;
+    }
+
+    // For local AI, check if it's actually initialized before processing
+    if (_config?.modelType == 'phi3' && _localAIService != null) {
+      if (!_localAIService!.isInitialized) {
+        debugPrint(
+          'RewriterService: Local AI service not yet initialized, skipping',
+        );
+        return;
+      }
     }
 
     debugPrint(
@@ -177,7 +229,7 @@ class RewriterService {
     }
 
     debugPrint(
-      'RewriterService: Sending to Gemini API: "${textToRewrite.substring(0, textToRewrite.length > 50 ? 50 : textToRewrite.length)}..."',
+      'RewriterService: Sending to ${_config?.modelType ?? 'AI'} API: "${textToRewrite.substring(0, textToRewrite.length > 50 ? 50 : textToRewrite.length)}..."',
     );
     _isProcessing = true;
     _lastOriginalText = textToRewrite;
@@ -186,7 +238,7 @@ class RewriterService {
 
     try {
       // Generate single rewritten version
-      final result = await _geminiService!.rewriteText(
+      final result = await _aiService!.rewriteText(
         textToRewrite,
         style: _config?.rewriteStyle ?? 'professional',
       );
@@ -226,11 +278,25 @@ class RewriterService {
         _rewrittenText = null;
         _onStatusChanged?.call('error');
 
-        // Check if it's a rate limit error
-        final isRateLimit = result.error?.contains('Rate limit') ?? false;
-        final errorMessage = isRateLimit
-            ? 'Rate limit reached. Please wait before trying again.'
-            : 'Failed to rewrite text. Check API key and connection.';
+        // Check error type and provide appropriate message
+        final errorStr = result.error?.toLowerCase() ?? '';
+        final isRateLimit = errorStr.contains('rate limit');
+        final isNativeLibError =
+            errorStr.contains('native libraries not available') ||
+            errorStr.contains('macos desktop') ||
+            errorStr.contains('mediapipe genai may not support');
+
+        String errorMessage;
+        if (isNativeLibError) {
+          errorMessage =
+              'Local AI is not supported on macOS desktop. '
+              'Please switch to Gemini API in settings.';
+        } else if (isRateLimit) {
+          errorMessage = 'Rate limit reached. Please wait before trying again.';
+        } else {
+          errorMessage =
+              'Failed to rewrite text. Check API key and connection.';
+        }
 
         // Show error notification
         await _notificationService.showErrorNotification(errorMessage);
@@ -251,9 +317,15 @@ class RewriterService {
 
   /// Update configuration
   Future<void> updateConfig(AppConfig config) async {
+    // Dispose old local AI service if switching away from it
+    if (_config?.modelType == 'phi3' && config.modelType != 'phi3') {
+      _localAIService?.dispose();
+      _localAIService = null;
+    }
+
     _config = config;
     await _storageService.saveConfig(config);
-    _updateGeminiService();
+    _updateAIService();
   }
 
   /// Start monitoring
@@ -272,6 +344,7 @@ class RewriterService {
   /// Dispose resources
   void dispose() {
     stop();
+    _localAIService?.dispose();
     _clipboardService.dispose();
   }
 }

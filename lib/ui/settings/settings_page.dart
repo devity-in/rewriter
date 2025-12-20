@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../ui/providers/app_provider.dart';
 import '../../core/services/gemini_service.dart';
+import '../../core/services/local_ai_service.dart';
 import '../../core/services/onboarding_service.dart';
 import 'api_key_dialog.dart';
 
@@ -19,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late TextEditingController _minLengthController;
   late TextEditingController _maxLengthController;
   late String _selectedStyle;
+  late String _selectedModel;
   bool _showAdvanced = false;
 
   final List<StyleOption> _styleOptions = [
@@ -62,6 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
       text: (config?.maxSentenceLength ?? 500).toString(),
     );
     _selectedStyle = config?.rewriteStyle ?? 'professional';
+    _selectedModel = config?.modelType ?? 'phi3'; // Default to local AI
   }
 
   @override
@@ -127,41 +130,66 @@ class _SettingsPageState extends State<SettingsPage> {
 
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-                  // API Key Section
+                  // Model Selection Section
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _ApiKeySection(
-                        hasApiKey: provider.hasApiKey,
-                        onConfigure: () async {
-                          final newKey = await showDialog<String>(
-                            context: context,
-                            builder: (context) => const ApiKeyDialog(),
+                      child: _ModelSelectionSection(
+                        selectedModel: _selectedModel,
+                        onModelSelected: (model) {
+                          setState(() {
+                            _selectedModel = model;
+                          });
+                          provider.updateConfig(
+                            config.copyWith(modelType: model),
                           );
-                          if (newKey != null && newKey.isNotEmpty) {
-                            await provider.updateConfig(
-                              config.copyWith(apiKey: newKey),
-                            );
-                            // Mark onboarding as complete when API key is configured
-                            // This ensures onboarding only shows once
-                            final onboardingService = OnboardingService();
-                            final hasCompleted = await onboardingService
-                                .hasCompletedOnboarding();
-                            if (!hasCompleted) {
-                              await onboardingService.markOnboardingComplete();
-                              // Hide window after API key is configured (onboarding complete)
-                              try {
-                                // Access windowManager through context if needed, or keep window visible
-                                // For now, keep window visible so user can continue configuring
-                              } catch (e) {
-                                // Ignore errors
-                              }
-                            }
-                          }
                         },
                       ),
                     ),
                   ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+
+                  // API Key Section (only shown for Gemini)
+                  if (_selectedModel == 'gemini')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _ApiKeySection(
+                          hasApiKey: provider.hasApiKey,
+                          onConfigure: () async {
+                            final newKey = await showDialog<String>(
+                              context: context,
+                              builder: (context) => const ApiKeyDialog(),
+                            );
+                            if (newKey != null && newKey.isNotEmpty) {
+                              await provider.updateConfig(
+                                config.copyWith(apiKey: newKey),
+                              );
+                              // Mark onboarding as complete when API key is configured
+                              // This ensures onboarding only shows once
+                              final onboardingService = OnboardingService();
+                              final hasCompleted = await onboardingService
+                                  .hasCompletedOnboarding();
+                              if (!hasCompleted) {
+                                await onboardingService
+                                    .markOnboardingComplete();
+                                // Hide window after API key is configured (onboarding complete)
+                                try {
+                                  // Access windowManager through context if needed, or keep window visible
+                                  // For now, keep window visible so user can continue configuring
+                                } catch (e) {
+                                  // Ignore errors
+                                }
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+
+                  // Spacing
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
@@ -186,13 +214,16 @@ class _SettingsPageState extends State<SettingsPage> {
 
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-                  // Rate Limit & Usage Section
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: _RateLimitSection(provider: provider),
+                  // Rate Limit & Usage Section (only for Gemini)
+                  if (_selectedModel == 'gemini')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _RateLimitSection(provider: provider),
+                      ),
                     ),
-                  ),
+                  if (_selectedModel == 'gemini')
+                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
                   const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
@@ -862,7 +893,13 @@ class _TestSectionState extends State<_TestSection> {
   String? _testResult;
 
   Future<void> _testRewrite() async {
-    if (!widget.provider.hasApiKey) {
+    final config = widget.provider.config;
+    if (config == null) {
+      _showError('Configuration not loaded');
+      return;
+    }
+
+    if (config.modelType == 'gemini' && !widget.provider.hasApiKey) {
       _showError('Please configure your API key first');
       return;
     }
@@ -874,31 +911,68 @@ class _TestSectionState extends State<_TestSection> {
 
     try {
       final rewriterService = widget.provider.rewriterService;
-      final geminiService = GeminiService(
-        apiKey: widget.provider.config!.apiKey!,
-        rateLimitService: rewriterService.rateLimitService,
-      );
 
-      const testText =
-          'This is a test sentence to verify the rewriting functionality.';
-      final result = await geminiService.rewriteText(
-        testText,
-        style: widget.provider.config?.rewriteStyle ?? 'professional',
-      );
+      if (config.modelType == 'phi3') {
+        final localAIService = LocalAIService();
+        await localAIService.initialize();
 
-      if (mounted) {
-        setState(() {
-          _isTesting = false;
-          _testResult = result.success
-              ? 'Success! Rewritten: "${result.rewrittenText}"'
-              : 'Error: ${result.error}';
-        });
+        const testText =
+            'This is a test sentence to verify the rewriting functionality.';
+        final result = await localAIService.rewriteText(
+          testText,
+          style: config.rewriteStyle,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isTesting = false;
+            _testResult = result.success
+                ? 'Success! Rewritten: "${result.rewrittenText}"'
+                : 'Error: ${result.error}';
+          });
+        }
+
+        localAIService.dispose();
+      } else {
+        final geminiService = GeminiService(
+          apiKey: config.apiKey!,
+          rateLimitService: rewriterService.rateLimitService,
+        );
+
+        const testText =
+            'This is a test sentence to verify the rewriting functionality.';
+        final result = await geminiService.rewriteText(
+          testText,
+          style: config.rewriteStyle,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isTesting = false;
+            _testResult = result.success
+                ? 'Success! Rewritten: "${result.rewrittenText}"'
+                : 'Error: ${result.error}';
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
+        final errorStr = e.toString().toLowerCase();
+        String errorMessage;
+        if (errorStr.contains('native libraries not available') ||
+            errorStr.contains('macos desktop') ||
+            errorStr.contains('symbol not found') ||
+            errorStr.contains('mediapipe genai may not support')) {
+          errorMessage =
+              'Local AI is not supported on macOS desktop.\n'
+              'The Mediapipe GenAI package does not include native libraries for macOS.\n'
+              'Please switch to Gemini API in the model selection above.';
+        } else {
+          errorMessage = 'Error: $e';
+        }
         setState(() {
           _isTesting = false;
-          _testResult = 'Error: $e';
+          _testResult = errorMessage;
         });
       }
     }
@@ -979,6 +1053,143 @@ class _TestSectionState extends State<_TestSection> {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _ModelSelectionSection extends StatelessWidget {
+  final String selectedModel;
+  final ValueChanged<String> onModelSelected;
+
+  const _ModelSelectionSection({
+    required this.selectedModel,
+    required this.onModelSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'AI Model',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _ModelCard(
+                model: 'gemini',
+                label: 'Gemini',
+                icon: Icons.cloud,
+                color: const Color(0xFF3B82F6),
+                isSelected: selectedModel == 'gemini',
+                onTap: () => onModelSelected('gemini'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ModelCard(
+                model: 'phi3',
+                label: 'Local AI',
+                icon: Icons.memory,
+                color: const Color(0xFF8B5CF6),
+                isSelected: selectedModel == 'phi3',
+                onTap: () => onModelSelected('phi3'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ModelCard extends StatelessWidget {
+  final String model;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ModelCard({
+    required this.model,
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? color.withValues(alpha: 0.1)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? color
+                  : colorScheme.outline.withValues(alpha: 0.1),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: isSelected
+                        ? color
+                        : colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                  const Spacer(),
+                  if (isSelected)
+                    Icon(Icons.check_circle, size: 18, color: color),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? color : colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                model == 'gemini' ? 'Cloud-based' : 'Local (offline)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

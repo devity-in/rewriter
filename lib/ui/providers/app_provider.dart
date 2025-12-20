@@ -22,7 +22,15 @@ class AppProvider extends ChangeNotifier {
   AppConfig? get config => _config;
   bool get isInitialized => _isInitialized;
   bool get isEnabled => _config?.enabled ?? false;
-  bool get hasApiKey => _config?.isValid ?? false;
+  bool get hasApiKey {
+    if (_config == null) return false;
+    // Phi3 doesn't need API key, Gemini does
+    if (_config!.modelType == 'phi3') {
+      return true; // Phi3 is valid if model file exists (checked at runtime)
+    }
+    return _config?.isValid ?? false;
+  }
+
   RewriterService get rewriterService => _rewriterService;
 
   Future<void> _initialize() async {
