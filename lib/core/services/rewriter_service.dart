@@ -68,27 +68,31 @@ class RewriterService {
       return;
     }
 
-    if (_config!.modelType == 'phi3') {
+    if (_config!.modelType == 'local') {
       // Use local AI service (doesn't need API key)
       _localAIService = LocalAIService();
       _aiService = _localAIService;
       _geminiService = null;
       // Initialize local AI service asynchronously
       // Don't block on initialization - let it happen in background
-      _localAIService!.initialize().catchError((e, stackTrace) {
+      _localAIService!.initialize(
+        modelUrl: _config!.modelUrl,
+        kaggleUsername: _config!.kaggleUsername,
+        kaggleKey: _config!.kaggleKey,
+      ).catchError((e, stackTrace) {
         debugPrint('RewriterService: Failed to initialize local AI: $e');
         debugPrint('Stack trace: $stackTrace');
         // If initialization fails, set service to null so user gets clear error
         if (!_localAIService!.isInitialized) {
           _aiService = null;
-          // Check if this is a native library issue
+          // Check if this is a native assets configuration issue
           final errorStr = e.toString().toLowerCase();
-          if (errorStr.contains('native libraries not available') ||
-              errorStr.contains('macos desktop') ||
+          if (errorStr.contains('native assets not available') ||
+              errorStr.contains('native-assets') ||
               errorStr.contains('symbol not found')) {
             debugPrint(
-              'RewriterService: Local AI not supported on this platform. '
-              'User should switch to Gemini API.',
+              'RewriterService: Local AI native assets not configured. '
+              'User may need to enable native-assets experiment or switch to Gemini API.',
             );
           }
         }
@@ -148,13 +152,13 @@ class RewriterService {
     }
     if (_aiService == null) {
       debugPrint(
-        'RewriterService: No AI service available (${_config?.modelType == 'phi3' ? 'Local AI model not initialized' : 'API key not configured'})',
+        'RewriterService: No AI service available (${_config?.modelType == 'local' ? 'Local AI model not initialized' : 'API key not configured'})',
       );
       return;
     }
 
     // For local AI, check if it's actually initialized before processing
-    if (_config?.modelType == 'phi3' && _localAIService != null) {
+    if (_config?.modelType == 'local' && _localAIService != null) {
       if (!_localAIService!.isInitialized) {
         debugPrint(
           'RewriterService: Local AI service not yet initialized, skipping',
@@ -281,16 +285,17 @@ class RewriterService {
         // Check error type and provide appropriate message
         final errorStr = result.error?.toLowerCase() ?? '';
         final isRateLimit = errorStr.contains('rate limit');
-        final isNativeLibError =
-            errorStr.contains('native libraries not available') ||
-            errorStr.contains('macos desktop') ||
-            errorStr.contains('mediapipe genai may not support');
+        final isNativeAssetsError =
+            errorStr.contains('native assets not available') ||
+            errorStr.contains('native-assets') ||
+            errorStr.contains('couldn\'t resolve native');
 
         String errorMessage;
-        if (isNativeLibError) {
+        if (isNativeAssetsError) {
           errorMessage =
-              'Local AI is not supported on macOS desktop. '
-              'Please switch to Gemini API in settings.';
+              'Local AI native assets not configured. '
+              'Enable native-assets: `flutter config --enable-native-assets`, then rebuild. '
+              'Or switch to Gemini API in settings.';
         } else if (isRateLimit) {
           errorMessage = 'Rate limit reached. Please wait before trying again.';
         } else {
@@ -318,7 +323,7 @@ class RewriterService {
   /// Update configuration
   Future<void> updateConfig(AppConfig config) async {
     // Dispose old local AI service if switching away from it
-    if (_config?.modelType == 'phi3' && config.modelType != 'phi3') {
+    if (_config?.modelType == 'local' && config.modelType != 'local') {
       _localAIService?.dispose();
       _localAIService = null;
     }

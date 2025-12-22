@@ -64,7 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
       text: (config?.maxSentenceLength ?? 500).toString(),
     );
     _selectedStyle = config?.rewriteStyle ?? 'professional';
-    _selectedModel = config?.modelType ?? 'phi3'; // Default to local AI
+    _selectedModel = config?.modelType ?? 'gemini'; // Default to Gemini API
   }
 
   @override
@@ -912,9 +912,13 @@ class _TestSectionState extends State<_TestSection> {
     try {
       final rewriterService = widget.provider.rewriterService;
 
-      if (config.modelType == 'phi3') {
+      if (config.modelType == 'local') {
         final localAIService = LocalAIService();
-        await localAIService.initialize();
+        await localAIService.initialize(
+          modelUrl: config.modelUrl,
+          kaggleUsername: config.kaggleUsername,
+          kaggleKey: config.kaggleKey,
+        );
 
         const testText =
             'This is a test sentence to verify the rewriting functionality.';
@@ -959,14 +963,15 @@ class _TestSectionState extends State<_TestSection> {
       if (mounted) {
         final errorStr = e.toString().toLowerCase();
         String errorMessage;
-        if (errorStr.contains('native libraries not available') ||
-            errorStr.contains('macos desktop') ||
+        if (errorStr.contains('native assets not available') ||
+            errorStr.contains('native-assets') ||
             errorStr.contains('symbol not found') ||
-            errorStr.contains('mediapipe genai may not support')) {
+            errorStr.contains('couldn\'t resolve native')) {
           errorMessage =
-              'Local AI is not supported on macOS desktop.\n'
-              'The Mediapipe GenAI package does not include native libraries for macOS.\n'
-              'Please switch to Gemini API in the model selection above.';
+              'Local AI native assets not configured.\n'
+              'Enable native-assets: `flutter config --enable-native-assets`\n'
+              'Then run `flutter pub get` and rebuild the app.\n'
+              'Alternatively, switch to Gemini API in the model selection above.';
         } else {
           errorMessage = 'Error: $e';
         }
@@ -1097,12 +1102,12 @@ class _ModelSelectionSection extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: _ModelCard(
-                model: 'phi3',
+                model: 'local',
                 label: 'Local AI',
                 icon: Icons.memory,
                 color: const Color(0xFF8B5CF6),
-                isSelected: selectedModel == 'phi3',
-                onTap: () => onModelSelected('phi3'),
+                isSelected: selectedModel == 'local',
+                onTap: () => onModelSelected('local'),
               ),
             ),
           ],

@@ -20,6 +20,9 @@ class StorageService {
   static const String _maxSentenceLengthKey = 'max_sentence_length';
   static const String _rewriteStyleKey = 'rewrite_style';
   static const String _modelTypeKey = 'model_type';
+  static const String _modelUrlKey = 'model_url';
+  static const String _kaggleUsernameKey = 'kaggle_username';
+  static const String _kaggleKeyKey = 'kaggle_key';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -110,6 +113,22 @@ class StorageService {
     await prefs.setInt(_maxSentenceLengthKey, config.maxSentenceLength);
     await prefs.setString(_rewriteStyleKey, config.rewriteStyle);
     await prefs.setString(_modelTypeKey, config.modelType);
+    if (config.modelUrl != null) {
+      await prefs.setString(_modelUrlKey, config.modelUrl!);
+    } else {
+      await prefs.remove(_modelUrlKey);
+    }
+    if (config.kaggleUsername != null) {
+      await prefs.setString(_kaggleUsernameKey, config.kaggleUsername!);
+    } else {
+      await prefs.remove(_kaggleUsernameKey);
+    }
+    if (config.kaggleKey != null) {
+      // Store Kaggle key securely
+      await _secureStorage.write(key: _kaggleKeyKey, value: config.kaggleKey!);
+    } else {
+      await _secureStorage.delete(key: _kaggleKeyKey);
+    }
 
     // Always save API key if provided, even if empty (to clear it)
     // Only save API key for Gemini model
@@ -127,7 +146,7 @@ class StorageService {
   Future<AppConfig> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final modelType =
-        prefs.getString(_modelTypeKey) ?? 'phi3'; // Default to local AI
+        prefs.getString(_modelTypeKey) ?? 'gemini'; // Default to Gemini API
 
     // Only load API key for Gemini model
     final apiKey = modelType == 'gemini' ? await getApiKey() : null;
@@ -140,6 +159,9 @@ class StorageService {
       maxSentenceLength: prefs.getInt(_maxSentenceLengthKey) ?? 500,
       rewriteStyle: prefs.getString(_rewriteStyleKey) ?? 'professional',
       modelType: modelType,
+      modelUrl: prefs.getString(_modelUrlKey),
+      kaggleUsername: prefs.getString(_kaggleUsernameKey),
+      kaggleKey: await _secureStorage.read(key: _kaggleKeyKey),
     );
 
     debugPrint(

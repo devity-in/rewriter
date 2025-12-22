@@ -55,7 +55,7 @@ dependencies:
   flutter_local_notifications: ^19.5.0
   hotkey_manager: ^0.2.3
   
-  # Mediapipe GenAI for local Phi-3 Mini
+  # Mediapipe GenAI for local AI model
   mediapipe_core: ^0.0.1
   mediapipe_genai: ^0.0.1
   path_provider: ^2.1.1

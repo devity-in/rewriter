@@ -6,7 +6,10 @@ class AppConfig {
   final int minSentenceLength;
   final int maxSentenceLength;
   final String rewriteStyle;
-  final String modelType; // 'gemini' or 'phi3'
+  final String modelType; // 'gemini' or 'local'
+  final String? modelUrl; // Optional URL to download model from at runtime
+  final String? kaggleUsername; // Kaggle username for downloading models
+  final String? kaggleKey; // Kaggle API key for downloading models
 
   AppConfig({
     this.enabled = true,
@@ -15,7 +18,10 @@ class AppConfig {
     this.minSentenceLength = 10,
     this.maxSentenceLength = 500,
     this.rewriteStyle = 'professional',
-    this.modelType = 'phi3', // Default to local AI
+    this.modelType = 'gemini', // Default to Gemini API
+    this.modelUrl,
+    this.kaggleUsername,
+    this.kaggleKey,
   });
 
   AppConfig copyWith({
@@ -26,6 +32,9 @@ class AppConfig {
     int? maxSentenceLength,
     String? rewriteStyle,
     String? modelType,
+    String? modelUrl,
+    String? kaggleUsername,
+    String? kaggleKey,
   }) {
     return AppConfig(
       enabled: enabled ?? this.enabled,
@@ -35,12 +44,15 @@ class AppConfig {
       maxSentenceLength: maxSentenceLength ?? this.maxSentenceLength,
       rewriteStyle: rewriteStyle ?? this.rewriteStyle,
       modelType: modelType ?? this.modelType,
+      modelUrl: modelUrl ?? this.modelUrl,
+      kaggleUsername: kaggleUsername ?? this.kaggleUsername,
+      kaggleKey: kaggleKey ?? this.kaggleKey,
     );
   }
 
   bool get isValid {
-    if (modelType == 'phi3') {
-      // Phi3 doesn't need API key, just needs model file
+    if (modelType == 'local') {
+      // Local AI doesn't need API key, just needs model file
       return true;
     }
     // Gemini needs API key

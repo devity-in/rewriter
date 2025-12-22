@@ -24,9 +24,9 @@ class AppProvider extends ChangeNotifier {
   bool get isEnabled => _config?.enabled ?? false;
   bool get hasApiKey {
     if (_config == null) return false;
-    // Phi3 doesn't need API key, Gemini does
-    if (_config!.modelType == 'phi3') {
-      return true; // Phi3 is valid if model file exists (checked at runtime)
+    // Local AI doesn't need API key, Gemini does
+    if (_config!.modelType == 'local') {
+      return true; // Local AI is valid if model file exists (checked at runtime)
     }
     return _config?.isValid ?? false;
   }
