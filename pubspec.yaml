@@ -86,7 +86,6 @@ flutter:
   assets:
     - assets/icon.png
     # Local AI models
-    - assets/models/functiongemma_270m.task
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

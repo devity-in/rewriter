@@ -1,0 +1,12 @@
+# Requirements for Hugging Face to MediaPipe GenAI converter
+# Install with: pip install -r requirements.txt
+#
+# NOTE: Requires Python 3.10 or higher
+# ai-edge-torch>=0.6.0 requires Python >=3.10
+
+# AI Edge Torch - for model conversion (requires Python 3.10+)
+ai-edge-torch>=0.6.0
+
+# MediaPipe - for bundling .task files
+mediapipe>=0.10.0
+

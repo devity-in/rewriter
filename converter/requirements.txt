@@ -1,6 +1,0 @@
-# Note: ai-edge-torch requires Python 3.10+
-# If you have Python 3.9, you may need to install Python 3.10+ first
-ai-edge-torch>=0.2.0
-mediapipe>=0.10.0
-torch>=2.0.0
-transformers>=4.30.0

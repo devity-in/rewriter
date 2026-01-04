@@ -519,86 +519,6 @@ class LocalAIService implements AIService {
     }
   }
 
-  /// Test session creation to catch native library errors early
-  Future<void> _testSessionCreation() async {
-    if (_llmEngine == null) {
-      throw Exception('Engine not initialized');
-    }
-
-    // Try to generate a very short response to test session creation
-    // This will fail if native libraries aren't available
-    final testCompleter = Completer<void>();
-    final errorCompleter = Completer<Object>();
-
-    runZonedGuarded(
-      () async {
-        try {
-          final testStream = _llmEngine!.generateResponse('test');
-          // Try to read at least one chunk with a timeout
-          await testStream
-              .timeout(Duration(seconds: 2))
-              .first
-              .timeout(Duration(seconds: 1));
-          if (!testCompleter.isCompleted) {
-            testCompleter.complete();
-          }
-        } catch (e) {
-          if (!errorCompleter.isCompleted) {
-            errorCompleter.complete(e);
-          }
-        }
-      },
-      (error, stack) {
-        debugPrint(
-          'LocalAIService: Unhandled error in test session creation: $error',
-        );
-        debugPrint('Stack trace: $stack');
-        // Check if this is the native assets error
-        final errorStr = error.toString().toLowerCase();
-        if (errorStr.contains('couldn\'t resolve native function') ||
-            errorStr.contains('no available native assets') ||
-            errorStr.contains('no asset with id') ||
-            errorStr.contains('symbol not found') ||
-            errorStr.contains('llminferenceengine_createsession')) {
-          debugPrint(
-            'LocalAIService: Detected native assets error in test session creation',
-          );
-        }
-        if (!errorCompleter.isCompleted) {
-          errorCompleter.complete(error);
-        }
-      },
-    );
-
-    // Wait for either completion or error
-    try {
-      await Future.any([
-        testCompleter.future,
-        errorCompleter.future.then((e) => throw e),
-      ]).timeout(Duration(seconds: 3));
-    } catch (e) {
-      // If it's a native assets error, rethrow it
-      final errorStr = e.toString().toLowerCase();
-      if (errorStr.contains('symbol not found') ||
-          errorStr.contains('native function') ||
-          errorStr.contains('no available native assets') ||
-          errorStr.contains('no asset with id') ||
-          errorStr.contains('couldn\'t resolve native') ||
-          errorStr.contains('llminferenceengine_createsession') ||
-          errorStr.contains('mediapipe_genai_bindings') ||
-          errorStr.contains('dlsym') ||
-          errorStr.contains('unhandled exception') ||
-          errorStr.contains('invalid argument')) {
-        rethrow;
-      }
-      // Other errors (like timeout) are OK - just means the test didn't complete
-      // but the session was created successfully
-      debugPrint(
-        'LocalAIService: Session creation test completed (non-critical error: $e)',
-      );
-    }
-  }
-
   /// Get model path - supports multiple sources:
   /// 1. Custom path (if provided)
   /// 2. Downloads folder (manually placed)
@@ -930,7 +850,7 @@ class LocalAIService implements AIService {
     final modelName = uri.pathSegments.isNotEmpty
         ? uri.pathSegments.last
         : 'kaggle_model_${kaggleUrl.hashCode}';
-    final archivePath = '${modelsDir.path}/${modelName}.tar.gz';
+    final archivePath = '${modelsDir.path}/$modelName.tar.gz';
     final extractedDir = Directory('${modelsDir.path}/${modelName}_extracted');
 
     // Check if model already exists (extracted)
@@ -996,7 +916,7 @@ class LocalAIService implements AIService {
     }
 
     // Copy .task file to models directory with a clean name
-    final finalModelPath = '${modelsDir.path}/${modelName}.task';
+    final finalModelPath = '${modelsDir.path}/$modelName.task';
     await File(extractedTaskFiles.first).copy(finalModelPath);
 
     // Clean up archive and extracted directory
