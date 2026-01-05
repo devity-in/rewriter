@@ -1,12 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 import '../../ui/providers/app_provider.dart';
 import '../../core/services/gemini_service.dart';
 import '../../core/services/local_ai_service.dart';
 import '../../core/services/onboarding_service.dart';
 import 'api_key_dialog.dart';
 
-/// Minimal settings page with clean design
+/// Clean and user-friendly settings page
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -97,28 +99,44 @@ class _SettingsPageState extends State<SettingsPage> {
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
-                  // Minimal Header
+                  // Header
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
-                      child: Text(
-                        'Settings',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.onSurface,
-                          letterSpacing: -0.5,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Settings',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Configure your rewriting preferences',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurface.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
 
-                  // Status Toggle
+                  // Status Card - Most Important
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: _StatusCard(
                         isEnabled: config.enabled,
                         hasApiKey: provider.hasApiKey,
+                        modelType: _selectedModel,
+                        isLocalAIInitializing: provider.isLocalAIInitializing,
                         onToggle: (value) {
                           provider.updateConfig(
                             config.copyWith(enabled: value),
@@ -128,9 +146,21 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
-                  // Model Selection Section
+                  // AI Model Configuration Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SectionHeader(
+                        title: 'AI Model',
+                        subtitle: 'Choose how text is rewritten',
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+
+                  // Model Selection
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -148,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
 
                   // API Key Section (only shown for Gemini)
                   if (_selectedModel == 'gemini')
@@ -166,21 +196,12 @@ class _SettingsPageState extends State<SettingsPage> {
                               await provider.updateConfig(
                                 config.copyWith(apiKey: newKey),
                               );
-                              // Mark onboarding as complete when API key is configured
-                              // This ensures onboarding only shows once
                               final onboardingService = OnboardingService();
                               final hasCompleted = await onboardingService
                                   .hasCompletedOnboarding();
                               if (!hasCompleted) {
                                 await onboardingService
                                     .markOnboardingComplete();
-                                // Hide window after API key is configured (onboarding complete)
-                                try {
-                                  // Access windowManager through context if needed, or keep window visible
-                                  // For now, keep window visible so user can continue configuring
-                                } catch (e) {
-                                  // Ignore errors
-                                }
                               }
                             }
                           },
@@ -188,12 +209,35 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                  // Spacing
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  // Local AI Configuration Section (only shown for Local AI)
+                  if (_selectedModel == 'local')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _LocalAIConfigSection(
+                          modelUrl: config.modelUrl,
+                          onModelUrlChanged: (url) async {
+                            await provider.updateConfig(
+                              config.copyWith(modelUrl: url),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
                   // Writing Style Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SectionHeader(
+                        title: 'Writing Style',
+                        subtitle: 'How should text be rewritten?',
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -212,9 +256,21 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
                   // Rate Limit & Usage Section (only for Gemini)
+                  if (_selectedModel == 'gemini')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _SectionHeader(
+                          title: 'API Usage',
+                          subtitle: 'Monitor your API requests',
+                        ),
+                      ),
+                    ),
+                  if (_selectedModel == 'gemini')
+                    const SliverToBoxAdapter(child: SizedBox(height: 12)),
                   if (_selectedModel == 'gemini')
                     SliverToBoxAdapter(
                       child: Padding(
@@ -223,11 +279,9 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   if (_selectedModel == 'gemini')
-                    const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                    const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-
-                  // Test Button
+                  // Test Section
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -285,11 +339,15 @@ class StyleOption {
 class _StatusCard extends StatelessWidget {
   final bool isEnabled;
   final bool hasApiKey;
+  final String modelType;
+  final bool isLocalAIInitializing;
   final ValueChanged<bool> onToggle;
 
   const _StatusCard({
     required this.isEnabled,
     required this.hasApiKey,
+    required this.modelType,
+    this.isLocalAIInitializing = false,
     required this.onToggle,
   });
 
@@ -297,23 +355,61 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isActive = isEnabled && hasApiKey;
+    final isConfigured = modelType == 'local' || hasApiKey;
+    final isActive = isEnabled && isConfigured && !isLocalAIInitializing;
+
+    String statusText;
+    String statusSubtext;
+    IconData statusIcon;
+    Color statusColor;
+
+    if (isLocalAIInitializing) {
+      statusText = 'Initializing';
+      statusSubtext = 'Downloading and setting up local AI model...';
+      statusIcon = Icons.download;
+      statusColor = const Color(0xFF3B82F6);
+    } else if (isActive) {
+      statusText = 'Active';
+      statusSubtext = 'Rewriting clipboard text automatically';
+      statusIcon = Icons.check_circle;
+      statusColor = const Color(0xFF10B981);
+    } else if (!isConfigured) {
+      statusText = 'Setup Required';
+      statusSubtext = modelType == 'local'
+          ? 'Configure local AI model below'
+          : 'Add your API key below to get started';
+      statusIcon = Icons.info_outline;
+      statusColor = const Color(0xFFF59E0B);
+    } else {
+      statusText = 'Paused';
+      statusSubtext = 'Enable to start rewriting';
+      statusIcon = Icons.pause_circle_outline;
+      statusColor = colorScheme.onSurface.withValues(alpha: 0.6);
+    }
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+        color: isActive
+            ? statusColor.withValues(alpha: 0.1)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive
+              ? statusColor.withValues(alpha: 0.3)
+              : colorScheme.outline.withValues(alpha: 0.1),
+          width: isActive ? 1.5 : 1,
+        ),
       ),
       child: Row(
         children: [
-          Icon(
-            isActive ? Icons.check_circle_outline : Icons.error_outline,
-            color: isActive
-                ? const Color(0xFF10B981)
-                : colorScheme.onSurface.withValues(alpha: 0.5),
-            size: 24,
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(statusIcon, color: statusColor, size: 24),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -321,25 +417,17 @@ class _StatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isActive
-                      ? 'Active'
-                      : hasApiKey
-                      ? 'Disabled'
-                      : 'Setup Required',
+                  statusText,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
-                  isActive
-                      ? 'Monitoring clipboard'
-                      : hasApiKey
-                      ? 'Enable to start'
-                      : 'Configure API key',
+                  statusSubtext,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -347,7 +435,7 @@ class _StatusCard extends StatelessWidget {
           ),
           Switch(
             value: isEnabled,
-            onChanged: hasApiKey ? onToggle : null,
+            onChanged: isConfigured ? onToggle : null,
             activeThumbColor: const Color(0xFF10B981),
           ),
         ],
@@ -367,62 +455,76 @@ class _ApiKeySection extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'API Key',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onConfigure,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onConfigure,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.5,
+            border: Border.all(
+              color: hasApiKey
+                  ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                  : colorScheme.outline.withValues(alpha: 0.1),
+              width: hasApiKey ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color:
+                      (hasApiKey
+                              ? const Color(0xFF10B981)
+                              : colorScheme.onSurface.withValues(alpha: 0.3))
+                          .withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: colorScheme.outline.withValues(alpha: 0.1),
+                child: Icon(
+                  hasApiKey ? Icons.key : Icons.key_off,
+                  color: hasApiKey
+                      ? const Color(0xFF10B981)
+                      : colorScheme.onSurface.withValues(alpha: 0.5),
+                  size: 20,
                 ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    hasApiKey ? Icons.key : Icons.key_off,
-                    color: hasApiKey
-                        ? const Color(0xFF10B981)
-                        : colorScheme.onSurface.withValues(alpha: 0.5),
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      hasApiKey ? 'Configured' : 'Not configured',
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasApiKey ? 'API Key Configured' : 'Add API Key',
                       style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
                         color: colorScheme.onSurface,
                       ),
                     ),
-                  ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: colorScheme.onSurface.withValues(alpha: 0.4),
-                    size: 20,
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    Text(
+                      hasApiKey
+                          ? 'Tap to change your API key'
+                          : 'Required for Gemini API',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+              Icon(
+                Icons.chevron_right,
+                color: colorScheme.onSurface.withValues(alpha: 0.4),
+                size: 20,
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -440,33 +542,17 @@ class _WritingStyleSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Writing Style',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: styleOptions.map((option) {
-            final isSelected = selectedStyle == option.value;
-            return _StyleCard(
-              option: option,
-              isSelected: isSelected,
-              onTap: () => onStyleSelected(option.value),
-            );
-          }).toList(),
-        ),
-      ],
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: styleOptions.map((option) {
+        final isSelected = selectedStyle == option.value;
+        return _StyleCard(
+          option: option,
+          isSelected: isSelected,
+          onTap: () => onStyleSelected(option.value),
+        );
+      }).toList(),
     );
   }
 }
@@ -570,11 +656,17 @@ class _AdvancedSettingsSection extends StatelessWidget {
             onTap: onToggle,
             borderRadius: BorderRadius.circular(8),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
                 children: [
+                  Icon(
+                    Icons.tune,
+                    size: 20,
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Advanced',
+                    'Advanced Settings',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colorScheme.onSurface,
@@ -603,7 +695,8 @@ class _AdvancedSettingsSection extends StatelessWidget {
                   children: [
                     const SizedBox(height: 16),
                     _AdvancedSettingField(
-                      label: 'Debounce Delay',
+                      label: 'Wait Time',
+                      helperText: 'Delay before rewriting (milliseconds)',
                       controller: debounceController,
                       suffix: 'ms',
                       icon: Icons.timer_outlined,
@@ -618,7 +711,8 @@ class _AdvancedSettingsSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     _AdvancedSettingField(
-                      label: 'Min Length',
+                      label: 'Minimum Length',
+                      helperText: 'Shortest sentence to rewrite',
                       controller: minLengthController,
                       suffix: 'chars',
                       icon: Icons.text_decrease_rounded,
@@ -633,7 +727,8 @@ class _AdvancedSettingsSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     _AdvancedSettingField(
-                      label: 'Max Length',
+                      label: 'Maximum Length',
+                      helperText: 'Longest sentence to rewrite',
                       controller: maxLengthController,
                       suffix: 'chars',
                       icon: Icons.text_increase_rounded,
@@ -657,6 +752,7 @@ class _AdvancedSettingsSection extends StatelessWidget {
 
 class _AdvancedSettingField extends StatelessWidget {
   final String label;
+  final String? helperText;
   final TextEditingController controller;
   final String suffix;
   final IconData icon;
@@ -664,6 +760,7 @@ class _AdvancedSettingField extends StatelessWidget {
 
   const _AdvancedSettingField({
     required this.label,
+    this.helperText,
     required this.controller,
     required this.suffix,
     required this.icon,
@@ -682,6 +779,7 @@ class _AdvancedSettingField extends StatelessWidget {
       style: theme.textTheme.bodyMedium,
       decoration: InputDecoration(
         labelText: label,
+        helperText: helperText,
         suffixText: suffix,
         prefixIcon: Icon(
           icon,
@@ -913,12 +1011,19 @@ class _TestSectionState extends State<_TestSection> {
       final rewriterService = widget.provider.rewriterService;
 
       if (config.modelType == 'local') {
+        if (config.modelUrl == null || config.modelUrl!.isEmpty) {
+          if (mounted) {
+            setState(() {
+              _isTesting = false;
+              _testResult =
+                  'Error: Model URL is required. MediaPipe GenAI requires models to be downloaded at runtime. Please configure a model URL in settings.';
+            });
+          }
+          return;
+        }
+
         final localAIService = LocalAIService();
-        await localAIService.initialize(
-          modelUrl: config.modelUrl,
-          kaggleUsername: config.kaggleUsername,
-          kaggleKey: config.kaggleKey,
-        );
+        await localAIService.initialize(modelUrl: config.modelUrl!);
 
         const testText =
             'This is a test sentence to verify the rewriting functionality.';
@@ -998,10 +1103,17 @@ class _TestSectionState extends State<_TestSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Test Rewriting',
+          'Test Connection',
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
             color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Verify your AI model is working correctly',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
         const SizedBox(height: 12),
@@ -1017,7 +1129,7 @@ class _TestSectionState extends State<_TestSection> {
                   ),
                 )
               : const Icon(Icons.play_arrow_rounded, size: 18),
-          label: Text(_isTesting ? 'Testing...' : 'Test Rewrite'),
+          label: Text(_isTesting ? 'Testing...' : 'Run Test'),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
@@ -1031,6 +1143,11 @@ class _TestSectionState extends State<_TestSection> {
                   ? const Color(0xFF10B981).withValues(alpha: 0.1)
                   : Colors.red.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _testResult!.contains('Success')
+                    ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                    : Colors.red.withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1195,6 +1312,409 @@ class _ModelCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LocalAIConfigSection extends StatefulWidget {
+  final String? modelUrl;
+  final ValueChanged<String?> onModelUrlChanged;
+
+  const _LocalAIConfigSection({
+    required this.modelUrl,
+    required this.onModelUrlChanged,
+  });
+
+  @override
+  State<_LocalAIConfigSection> createState() => _LocalAIConfigSectionState();
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+
+  const _SectionHeader({required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
+  late TextEditingController _modelUrlController;
+  bool _isValidating = false;
+  String? _validationMessage;
+  int? _downloadProgressBytes;
+  int? _downloadTotalBytes;
+  String? _downloadStatus; // 'downloading', 'initializing', 'ready', 'error'
+
+  @override
+  void initState() {
+    super.initState();
+    _modelUrlController = TextEditingController(text: widget.modelUrl ?? '');
+    _setupProgressListener();
+  }
+
+  void _setupProgressListener() {
+    // Set up progress listeners when widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<AppProvider>(context, listen: false);
+      final localAIService = provider.rewriterService.localAIService;
+      if (localAIService != null) {
+        localAIService.onDownloadProgress = (downloaded, total) {
+          if (mounted) {
+            setState(() {
+              _downloadProgressBytes = downloaded;
+              _downloadTotalBytes = total;
+              _downloadStatus = 'downloading';
+            });
+          }
+        };
+        localAIService.onStatusChanged = (status) {
+          if (mounted) {
+            setState(() {
+              _downloadStatus = status;
+              if (status == 'ready') {
+                _downloadProgressBytes = null;
+                _downloadTotalBytes = null;
+              }
+            });
+          }
+        };
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-setup listeners when dependencies change (e.g., when model URL changes)
+    _setupProgressListener();
+  }
+
+  @override
+  void dispose() {
+    _modelUrlController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _validateUrl() async {
+    final url = _modelUrlController.text.trim();
+    if (url.isEmpty) {
+      setState(() {
+        _validationMessage = null;
+      });
+      widget.onModelUrlChanged(null);
+      return;
+    }
+
+    setState(() {
+      _isValidating = true;
+      _validationMessage = null;
+    });
+
+    try {
+      final uri = Uri.parse(url);
+      if (!uri.hasScheme || (!uri.scheme.startsWith('http'))) {
+        setState(() {
+          _validationMessage = 'Invalid URL format. Use http:// or https://';
+          _isValidating = false;
+        });
+        return;
+      }
+
+      // Use HEAD request to validate URL without downloading the file
+      // This is much faster for large model files
+      final client = http.Client();
+      try {
+        final response = await client
+            .head(uri)
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                throw Exception('Connection timeout');
+              },
+            );
+
+        if (response.statusCode == 200 || response.statusCode == 405) {
+          // 405 Method Not Allowed is OK - some servers don't support HEAD
+          // but the URL is still valid
+          setState(() {
+            _validationMessage = '✓ Model URL is valid';
+            _isValidating = false;
+          });
+          widget.onModelUrlChanged(url);
+        } else if (response.statusCode == 404) {
+          setState(() {
+            _validationMessage = 'File not found (404). Check the URL.';
+            _isValidating = false;
+          });
+        } else {
+          setState(() {
+            _validationMessage =
+                'Server returned status ${response.statusCode}. The URL may still work.';
+            _isValidating = false;
+          });
+          // Still allow the URL even if status is not 200
+          widget.onModelUrlChanged(url);
+        }
+      } finally {
+        client.close();
+      }
+    } on http.ClientException catch (e) {
+      setState(() {
+        _validationMessage =
+            'Connection failed: ${e.message}. Check your internet connection and try again.';
+        _isValidating = false;
+      });
+    } on TimeoutException {
+      setState(() {
+        _validationMessage =
+            'Connection timeout. The server may be slow or unreachable. You can still try using this URL.';
+        _isValidating = false;
+      });
+      // Allow the URL even if validation times out - actual download has longer timeout
+      widget.onModelUrlChanged(url);
+    } catch (e) {
+      final errorMsg = e.toString().toLowerCase();
+      String message;
+      if (errorMsg.contains('timeout')) {
+        message =
+            'Connection timeout. The server may be slow. You can still try using this URL.';
+        // Allow the URL - actual download has longer timeout
+        widget.onModelUrlChanged(url);
+      } else if (errorMsg.contains('failed host lookup') ||
+          errorMsg.contains('network') ||
+          errorMsg.contains('connection')) {
+        message =
+            'Cannot reach server. Check your internet connection and the URL.';
+      } else if (errorMsg.contains('invalid argument') ||
+          errorMsg.contains('format')) {
+        message = 'Invalid URL format. Please check the URL.';
+      } else {
+        message =
+            'Could not validate URL. You can still try using it - validation may fail for some servers.';
+        // Allow the URL - some servers may not respond to HEAD requests
+        widget.onModelUrlChanged(url);
+      }
+      setState(() {
+        _validationMessage = message;
+        _isValidating = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _modelUrlController,
+          decoration: InputDecoration(
+            labelText: 'Model URL',
+            hintText: 'http://localhost:8000/model.task',
+            helperText: 'URL to download the model file (.task format)',
+            prefixIcon: const Icon(Icons.link, size: 20),
+            suffixIcon: _isValidating
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _modelUrlController.text.isNotEmpty &&
+                      _validationMessage != null &&
+                      _validationMessage!.startsWith('✓')
+                ? const Icon(
+                    Icons.check_circle,
+                    size: 20,
+                    color: Color(0xFF10B981),
+                  )
+                : null,
+            filled: true,
+            fillColor: colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.5,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: colorScheme.outline.withValues(alpha: 0.1),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: colorScheme.outline.withValues(alpha: 0.1),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
+          ),
+          onChanged: (value) {
+            widget.onModelUrlChanged(value.isEmpty ? null : value);
+            setState(() {
+              _validationMessage = null;
+            });
+          },
+          onSubmitted: (_) => _validateUrl(),
+        ),
+        if (_validationMessage != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                _validationMessage!.startsWith('✓')
+                    ? Icons.check_circle
+                    : Icons.error_outline,
+                size: 16,
+                color: _validationMessage!.startsWith('✓')
+                    ? const Color(0xFF10B981)
+                    : Colors.orange,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _validationMessage!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _validationMessage!.startsWith('✓')
+                        ? const Color(0xFF10B981)
+                        : Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        // Download progress indicator
+        if (_downloadStatus == 'downloading' ||
+            _downloadStatus == 'initializing') ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _downloadStatus == 'downloading'
+                          ? 'Downloading model...'
+                          : 'Initializing model...',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_downloadStatus == 'downloading' &&
+                    _downloadProgressBytes != null &&
+                    _downloadTotalBytes != null &&
+                    _downloadTotalBytes! > 0) ...[
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: _downloadProgressBytes! / _downloadTotalBytes!,
+                    backgroundColor: colorScheme.outline.withValues(alpha: 0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(_downloadProgressBytes! / 1024 / 1024).toStringAsFixed(1)} MB / ${(_downloadTotalBytes! / 1024 / 1024).toStringAsFixed(1)} MB (${((_downloadProgressBytes! / _downloadTotalBytes!) * 100).toStringAsFixed(0)}%)',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.7),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Enter a URL to download a .task model file. For local development, use the model server: run `python3 scripts/serve_models.py` and enter `http://localhost:8000/your_model.task`',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

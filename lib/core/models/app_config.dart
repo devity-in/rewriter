@@ -7,9 +7,7 @@ class AppConfig {
   final int maxSentenceLength;
   final String rewriteStyle;
   final String modelType; // 'gemini' or 'local'
-  final String? modelUrl; // Optional URL to download model from at runtime
-  final String? kaggleUsername; // Kaggle username for downloading models
-  final String? kaggleKey; // Kaggle API key for downloading models
+  final String? modelUrl; // URL to download model from at runtime (required for local AI)
 
   AppConfig({
     this.enabled = true,
@@ -20,8 +18,6 @@ class AppConfig {
     this.rewriteStyle = 'professional',
     this.modelType = 'gemini', // Default to Gemini API
     this.modelUrl,
-    this.kaggleUsername,
-    this.kaggleKey,
   });
 
   AppConfig copyWith({
@@ -33,8 +29,6 @@ class AppConfig {
     String? rewriteStyle,
     String? modelType,
     String? modelUrl,
-    String? kaggleUsername,
-    String? kaggleKey,
   }) {
     return AppConfig(
       enabled: enabled ?? this.enabled,
@@ -45,8 +39,6 @@ class AppConfig {
       rewriteStyle: rewriteStyle ?? this.rewriteStyle,
       modelType: modelType ?? this.modelType,
       modelUrl: modelUrl ?? this.modelUrl,
-      kaggleUsername: kaggleUsername ?? this.kaggleUsername,
-      kaggleKey: kaggleKey ?? this.kaggleKey,
     );
   }
 

@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/services/storage_service.dart';
@@ -18,6 +20,21 @@ import 'utils/constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Set up global error handlers for better error reporting
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('Flutter framework error: ${details.exception}');
+    debugPrint('Stack trace: ${details.stack}');
+  };
+
+  // Handle errors outside of Flutter callbacks (e.g., in isolates)
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Unhandled platform error: $error');
+    debugPrint('Stack trace: $stack');
+    // Return true to indicate we handled the error (prevents app crash)
+    return true;
+  };
 
   try {
     // Initialize window manager for desktop
@@ -124,26 +141,22 @@ void main() async {
     // Setup notification callbacks
     notificationService.onCopyText = (String text) async {
       await clipboardService.setClipboardText(text);
-      debugPrint('Copied to clipboard from notification: $text');
       // Dismiss notification after copy
       await notificationService.cancelAll();
     };
 
     notificationService.onCloseNotification = () async {
       await notificationService.cancelAll();
-      debugPrint('Notification dismissed');
     };
 
     // Track rewritten text (single version)
     rewriterService.onRewrittenTextChanged = (String text) {
-      debugPrint('Rewritten text available: "$text"');
       lastRewrittenText = text;
       // Text is already copied to clipboard by rewriter service
     };
 
     // Track status changes
     rewriterService.onStatusChanged = (String status) {
-      debugPrint('Status changed: $status');
       trayManager.updateStatus(status);
     };
 
@@ -151,7 +164,6 @@ void main() async {
     hotkeyService.onCopyRewritten = () async {
       if (lastRewrittenText != null) {
         await clipboardService.setClipboardText(lastRewrittenText!);
-        debugPrint('Copied rewritten text via hotkey');
       }
     };
 
@@ -218,10 +230,6 @@ void main() async {
         ),
       ),
     );
-
-    // Keep app alive - prevent it from exiting
-    // This is important for system tray apps
-    debugPrint('App initialized. Running in background...');
   } catch (e, stackTrace) {
     // Log error but don't crash - system tray apps should be resilient
     debugPrint('Error initializing app: $e');
@@ -303,7 +311,7 @@ class _RewriterAppState extends State<RewriterApp> {
       if (navigator == null || !navigator.mounted) return;
 
       // Show welcome dialog
-      final shouldShowSettings = await showDialog<bool>(
+      await showDialog<bool>(
         context: navigator.context,
         barrierDismissible: false,
         builder: (context) => WelcomeDialog(
@@ -315,21 +323,9 @@ class _RewriterAppState extends State<RewriterApp> {
         ),
       );
 
-      if (shouldShowSettings == true) {
-        // User clicked "Get Started" - just mark welcome as seen
-        // Settings page is already showing, so user can configure there
-        await widget.onboardingService.markWelcomeSeen();
-        // Don't mark onboarding complete yet - let user complete setup in settings
-        // Window stays visible so user can configure settings
-      } else {
-        // User skipped, mark welcome as seen and hide window
-        await widget.onboardingService.markWelcomeSeen();
-        try {
-          await widget.windowManager.hide();
-        } catch (e) {
-          debugPrint('Error hiding window after skip: $e');
-        }
-      }
+      // User clicked "Get Started" - mark welcome as seen
+      // Window stays visible so user can configure settings
+      // The dialog always returns true now (no skip button)
     } else {
       // Onboarding already completed, ensure window is hidden
       try {

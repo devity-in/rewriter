@@ -24,11 +24,24 @@ class AppProvider extends ChangeNotifier {
   bool get isEnabled => _config?.enabled ?? false;
   bool get hasApiKey {
     if (_config == null) return false;
-    // Local AI doesn't need API key, Gemini does
+    // Local AI doesn't need API key, but needs model URL and initialization
     if (_config!.modelType == 'local') {
-      return true; // Local AI is valid if model file exists (checked at runtime)
+      // Check if local AI service is initialized
+      final localAIService = _rewriterService.localAIService;
+      if (localAIService != null) {
+        return localAIService.isInitialized;
+      }
+      // Fallback: check if model URL is configured
+      return _config!.modelUrl != null && _config!.modelUrl!.isNotEmpty;
     }
     return _config?.isValid ?? false;
+  }
+
+  /// Check if local AI is currently initializing
+  bool get isLocalAIInitializing {
+    if (_config?.modelType != 'local') return false;
+    final localAIService = _rewriterService.localAIService;
+    return localAIService?.isInitializing ?? false;
   }
 
   RewriterService get rewriterService => _rewriterService;

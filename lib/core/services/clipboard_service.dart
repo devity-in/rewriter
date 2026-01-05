@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:clipboard/clipboard.dart';
 
 /// Service for monitoring and managing clipboard
@@ -19,10 +18,6 @@ class ClipboardService {
   /// Start monitoring clipboard changes
   void startMonitoring({int intervalMs = 500}) {
     stopMonitoring();
-    debugPrint(
-      'ClipboardService: Starting monitoring (interval: ${intervalMs}ms)',
-    );
-
     _monitoringTimer = Timer.periodic(
       Duration(milliseconds: intervalMs),
       (_) => _checkClipboard(),
@@ -31,7 +26,6 @@ class ClipboardService {
 
   /// Stop monitoring clipboard changes
   void stopMonitoring() {
-    debugPrint('ClipboardService: Stopping monitoring');
     _monitoringTimer?.cancel();
     _monitoringTimer = null;
   }
@@ -44,9 +38,6 @@ class ClipboardService {
       if (currentContent.isNotEmpty &&
           currentContent != _lastClipboardContent &&
           currentContent.trim().isNotEmpty) {
-        debugPrint(
-          'ClipboardService: Clipboard changed (length: ${currentContent.length})',
-        );
         _lastClipboardContent = currentContent;
         _onClipboardChanged?.call(currentContent);
       }

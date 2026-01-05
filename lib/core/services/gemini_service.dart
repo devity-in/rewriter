@@ -34,7 +34,6 @@ class GeminiService implements AIService {
     // Try to find an available model
     try {
       final availableModels = await listAvailableModels();
-      debugPrint('Available models: $availableModels');
 
       // Look for a model that supports generateContent
       for (final candidate in _modelCandidates) {
@@ -49,7 +48,6 @@ class GeminiService implements AIService {
         if (matchingModel.isNotEmpty) {
           // Use the model name as returned by API (might include 'models/' prefix)
           _cachedModel = matchingModel;
-          debugPrint('Using model: $_cachedModel');
           return _cachedModel!;
         }
       }
@@ -57,16 +55,14 @@ class GeminiService implements AIService {
       // If no match found, try first available model
       if (availableModels.isNotEmpty) {
         _cachedModel = availableModels.first;
-        debugPrint('Using first available model: $_cachedModel');
         return _cachedModel!;
       }
     } catch (e) {
-      debugPrint('Error detecting model, using fallback: $e');
+      // Fallback to first candidate on error
     }
 
     // Fallback to first candidate
     _cachedModel = _modelCandidates.first;
-    debugPrint('Using fallback model: $_cachedModel');
     return _cachedModel!;
   }
 
@@ -124,7 +120,6 @@ class GeminiService implements AIService {
           : modelName;
       final url =
           '$_baseUrl/models/$cleanModelName:generateContent?key=$apiKey';
-      debugPrint('Using API URL: $url');
 
       final prompt = _buildPrompt(text, style);
 
@@ -196,7 +191,6 @@ class GeminiService implements AIService {
           : modelName;
       final url =
           '$_baseUrl/models/$cleanModelName:generateContent?key=$apiKey';
-      debugPrint('Using API URL (alternative): $url');
 
       final prompt = _buildAlternativePrompt(text, style);
 
@@ -312,7 +306,6 @@ class GeminiService implements AIService {
   Future<List<String>> listAvailableModels() async {
     try {
       final url = '$_baseUrl/models?key=$apiKey';
-      debugPrint('Fetching available models from: $url');
       final response = await http
           .get(Uri.parse(url))
           .timeout(
@@ -322,9 +315,6 @@ class GeminiService implements AIService {
             },
           );
 
-      debugPrint('ListModels response status: ${response.statusCode}');
-      debugPrint('ListModels response body: ${response.body}');
-
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         final models = jsonResponse['models'] as List?;
@@ -332,18 +322,10 @@ class GeminiService implements AIService {
           final modelList = models
               .map((m) {
                 final name = m['name'] as String? ?? '';
-                final supportedMethods =
-                    m['supportedGenerationMethods'] as List?;
-                final supportsGenerateContent =
-                    supportedMethods?.contains('generateContent') ?? false;
-                debugPrint(
-                  'Model: $name, supports generateContent: $supportsGenerateContent',
-                );
                 return name;
               })
               .where((name) => name.isNotEmpty)
               .toList();
-          debugPrint('Found ${modelList.length} available models');
           return modelList;
         }
       } else {

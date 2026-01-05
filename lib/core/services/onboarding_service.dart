@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for managing onboarding state
@@ -22,14 +21,12 @@ class OnboardingService {
   Future<void> markOnboardingComplete() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hasCompletedOnboardingKey, true);
-    debugPrint('OnboardingService: Marked onboarding as complete');
   }
 
   /// Mark welcome as seen
   Future<void> markWelcomeSeen() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_hasSeenWelcomeKey, true);
-    debugPrint('OnboardingService: Marked welcome as seen');
   }
 
   /// Reset onboarding (for testing)
@@ -37,6 +34,5 @@ class OnboardingService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_hasCompletedOnboardingKey);
     await prefs.remove(_hasSeenWelcomeKey);
-    debugPrint('OnboardingService: Reset onboarding state');
   }
 }

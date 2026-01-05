@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-Convert Hugging Face model files to MediaPipe GenAI .task format.
+Convert Hugging Face Safetensors to MediaPipe Task format.
 
-This script takes a local directory containing unzipped Hugging Face model files
-(Safetensors, config.json, tokenizer.model) and converts them into a MediaPipe GenAI .task file.
+This script follows the official Google AI documentation for converting Gemma models
+from Hugging Face Safetensors format (.safetensors) to MediaPipe Task format (.task).
 
-The script:
-1. Uses ai_edge_torch.generative to load the model architecture (Gemma 2 or Gemma 3)
-2. Converts the model to LiteRT (.tflite) with dynamic_int8 quantization
-3. Uses mediapipe.tasks.python.genai.bundler to package into a .task file
+Official documentation:
+    https://ai.google.dev/gemma/docs/conversions/hf-to-mediapipe-task
+
+The conversion process:
+1. Loads the Gemma model using ai_edge_torch.generative (Gemma 2 or Gemma 3)
+2. Converts to LiteRT (.tflite) with dynamic_int8 quantization
+3. Packages into a .task file using mediapipe.tasks.python.genai.bundler
 
 Requirements:
     pip install 'ai-edge-torch>=0.6.0' mediapipe
@@ -16,10 +19,10 @@ Requirements:
 Usage:
     python convert_hf_to_mediapipe.py --input INPUT_PATH --output OUTPUT_PATH [OPTIONS]
 
-Example:
+Example (from official documentation):
     python convert_hf_to_mediapipe.py \\
-        --input ../models/qwen2-transformers-0.5b-v1 \\
-        --output ../models/qwen2_0.5b.task \\
+        --input ../models/google/gemma-3-270m-it \\
+        --output ../models/gemma_3_270m.task \\
         --architecture gemma3 \\
         --size 270m
 """
@@ -62,7 +65,7 @@ except ImportError as e:
         print("      GitHub issues: https://github.com/google-ai-edge/ai-edge-torch/issues")
     else:
         print("   Please install: pip install 'ai-edge-torch>=0.6.0' mediapipe")
-        print("   Or run: ./setup_env.sh")
+        print("   Or install from requirements.txt: pip install -r requirements.txt")
     
     print("")
     print(f"   Original error: {error_msg[:500]}...")
@@ -240,6 +243,8 @@ def load_model(input_hf_path: Path, architecture: str, size: str):
     if architecture == 'gemma3':
         if size == '270m':
             return gemma3.build_model_270m(model_path)
+        elif size == '1b':
+            return gemma3.build_model_1b(model_path)
         elif size == '2b':
             return gemma3.build_model_2b(model_path)
         elif size == '7b':
@@ -277,14 +282,22 @@ def convert_model(
     kv_cache_max_len: int = 4096,
 ) -> bool:
     """
-    Convert Hugging Face model to MediaPipe GenAI .task format.
+    Convert Hugging Face Safetensors to MediaPipe Task format.
+    
+    This function follows the official Google AI documentation:
+    https://ai.google.dev/gemma/docs/conversions/hf-to-mediapipe-task
+    
+    The conversion process:
+    1. Loads the Gemma model using ai_edge_torch.generative
+    2. Converts to LiteRT (.tflite) with dynamic_int8 quantization
+    3. Packages into a .task file using mediapipe bundler
     
     Args:
         input_hf_path: Path to directory containing Hugging Face model files
         temp_tflite_path: Temporary directory for the intermediate .tflite file
         final_output_path: Final output path for the .task file
         architecture: Model architecture ('gemma2' or 'gemma3'), auto-detected if None
-        size: Model size ('270m', '2b', '7b'), auto-detected if None
+        size: Model size ('270m', '1b', '2b', '7b'), auto-detected if None
         tokenizer_path: Optional path to tokenizer.model file (defaults to input_hf_path/tokenizer.model)
         model_name_prefix: Prefix for the tflite file name (defaults to architecture_size)
         prefill_seq_len: Prefill sequence length (default: 2048)
@@ -329,12 +342,13 @@ def convert_model(
         if model_name_prefix is None:
             model_name_prefix = f"{architecture}_{size}"
         
-        # Configure export settings
+        # Configure export settings (following Google AI documentation)
         export_config = ExportConfig()
         export_config.kvcache_layout = kv_cache.KV_LAYOUT_TRANSPOSED
         export_config.mask_as_input = True
         
         # Convert to LiteRT with dynamic_int8 quantization
+        # Reference: https://ai.google.dev/gemma/docs/conversions/hf-to-mediapipe-task
         converter.convert_to_tflite(
             pytorch_model,
             output_path=str(temp_tflite_path),
@@ -373,20 +387,35 @@ def convert_model(
                 return False
         
         # Use MediaPipe bundler to package the .tflite and tokenizer into .task file
-        # Try both create_task and create_task_bundle methods
+        # Following Google AI documentation: https://ai.google.dev/gemma/docs/conversions/hf-to-mediapipe-task
         try:
-            bundler.create_task(
-                model_path=str(tflite_file),
-                tokenizer_path=str(tokenizer_path),
-                output_path=str(final_output_path),
+            # Try using BundleConfig (recommended approach from documentation)
+            config = bundler.BundleConfig(
+                tflite_model=str(tflite_file),
+                tokenizer_model=str(tokenizer_path),
+                start_token="<bos>",
+                stop_tokens=["<eos>", "<end_of_turn>"],
+                output_filename=str(final_output_path),
+                prompt_prefix="<start_of_turn>user\n",
+                prompt_suffix="<end_of_turn>\n<start_of_turn>model\n",
             )
-        except AttributeError:
-            # Fallback to create_task_bundle if create_task doesn't exist
-            bundler.create_task_bundle(
-                model_path=str(tflite_file),
-                tokenizer_path=str(tokenizer_path),
-                output_path=str(final_output_path),
-            )
+            bundler.create_bundle(config)
+        except (AttributeError, TypeError) as e:
+            # Fallback to simpler API if BundleConfig doesn't exist or has different signature
+            print(f"   ⚠️  BundleConfig not available, trying fallback method: {e}")
+            try:
+                bundler.create_task(
+                    model_path=str(tflite_file),
+                    tokenizer_path=str(tokenizer_path),
+                    output_path=str(final_output_path),
+                )
+            except AttributeError:
+                # Final fallback
+                bundler.create_task_bundle(
+                    model_path=str(tflite_file),
+                    tokenizer_path=str(tokenizer_path),
+                    output_path=str(final_output_path),
+                )
         
         # Check if task file was created
         if not final_output_path.exists():
@@ -410,24 +439,38 @@ def main():
         description='Convert Hugging Face model to MediaPipe GenAI .task format',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Basic usage (with auto-detection)
+Examples (following Google AI documentation):
+  # Basic usage with auto-detection
   python convert_hf_to_mediapipe.py \\
-      --input ../models/qwen2-transformers-0.5b-v1 \\
-      --output ../models/qwen2_0.5b.task
+      --input ../models/google/gemma-3-270m-it \\
+      --output ../models/gemma_3_270m.task
 
-  # With explicit architecture and size
+  # With explicit architecture and size (Gemma 3 270M)
   python convert_hf_to_mediapipe.py \\
-      --input ../models/gemma-3-2b \\
+      --input ../models/google/gemma-3-270m-it \\
+      --output ../models/gemma_3_270m.task \\
+      --architecture gemma3 \\
+      --size 270m
+
+  # Gemma 3 1B model
+  python convert_hf_to_mediapipe.py \\
+      --input ../models/google/gemma-3-1b-it \\
+      --output ../models/gemma_3_1b.task \\
+      --architecture gemma3 \\
+      --size 1b
+
+  # With custom temporary directory and parameters
+  python convert_hf_to_mediapipe.py \\
+      --input ../models/google/gemma-3-2b-it \\
       --output ../models/gemma_3_2b.task \\
       --architecture gemma3 \\
-      --size 2b
+      --size 2b \\
+      --temp ./temp/tflite_output \\
+      --prefill-seq-len 2048 \\
+      --kv-cache-max-len 4096
 
-  # With custom temporary directory
-  python convert_hf_to_mediapipe.py \\
-      --input ../models/gemma-2-270m \\
-      --output ../models/gemma_2_270m.task \\
-      --temp ./temp/tflite_output
+Official documentation:
+    https://ai.google.dev/gemma/docs/conversions/hf-to-mediapipe-task
         """
     )
     
@@ -471,7 +514,7 @@ Examples:
         '--size',
         type=str,
         default=None,
-        choices=['270m', '2b', '7b'],
+        choices=['270m', '1b', '2b', '7b'],
         help='Model size (auto-detected if not specified)'
     )
     

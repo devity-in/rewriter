@@ -81,27 +81,18 @@ class WelcomeDialog extends StatelessWidget {
             ),
             const SizedBox(height: 32),
 
-            // Action buttons
+            // Action button
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                  onPressed: () async {
-                    final navigator = Navigator.of(context);
-                    await onboardingService.markWelcomeSeen();
-                    if (navigator.canPop()) {
-                      navigator.pop();
-                    }
-                  },
-                  child: const Text('Skip'),
-                ),
-                const SizedBox(width: 12),
                 FilledButton(
                   onPressed: () async {
                     final navigator = Navigator.of(context);
                     await onboardingService.markWelcomeSeen();
+                    // Return true to indicate user wants to configure settings
+                    // Window will stay visible for user to configure
                     if (navigator.canPop()) {
-                      navigator.pop();
+                      navigator.pop(true);
                     }
                     onComplete();
                   },

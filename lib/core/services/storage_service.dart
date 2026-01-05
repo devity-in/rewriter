@@ -21,8 +21,6 @@ class StorageService {
   static const String _rewriteStyleKey = 'rewrite_style';
   static const String _modelTypeKey = 'model_type';
   static const String _modelUrlKey = 'model_url';
-  static const String _kaggleUsernameKey = 'kaggle_username';
-  static const String _kaggleKeyKey = 'kaggle_key';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -31,23 +29,23 @@ class StorageService {
     // Always save to both secure storage and SharedPreferences as backup
     try {
       await _secureStorage.write(key: _apiKeyKey, value: apiKey);
-      debugPrint('StorageService: API key saved to secure storage');
 
       // Verify it was saved by reading it back
       final saved = await _secureStorage.read(key: _apiKeyKey);
       if (saved != apiKey) {
-        debugPrint(
-          'Warning: Secure storage write verification failed, using SharedPreferences fallback',
-        );
         await prefs.setString('${_apiKeyKey}_fallback', apiKey);
       } else {
-        debugPrint('StorageService: API key verified in secure storage');
         // Also save to fallback for redundancy
         await prefs.setString('${_apiKeyKey}_fallback', apiKey);
       }
     } catch (e) {
-      // Fallback to SharedPreferences if secure storage fails
-      debugPrint('Warning: Secure storage failed, using SharedPreferences: $e');
+      // Error code -34018 means entitlement not present (common on unsigned macOS apps)
+      // This is expected and we'll use SharedPreferences fallback
+      final errorStr = e.toString();
+      if (!errorStr.contains('-34018') && !errorStr.contains('entitlement')) {
+        debugPrint('Warning: Secure storage failed, using SharedPreferences: $e');
+      }
+      // Always save to SharedPreferences as fallback
       await prefs.setString('${_apiKeyKey}_fallback', apiKey);
     }
   }
@@ -58,7 +56,6 @@ class StorageService {
     try {
       final apiKey = await _secureStorage.read(key: _apiKeyKey);
       if (apiKey != null && apiKey.isNotEmpty) {
-        debugPrint('StorageService: API key loaded from secure storage');
         return apiKey;
       }
     } catch (e) {
@@ -70,13 +67,9 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       final fallbackKey = prefs.getString('${_apiKeyKey}_fallback');
       if (fallbackKey != null && fallbackKey.isNotEmpty) {
-        debugPrint(
-          'StorageService: API key loaded from SharedPreferences fallback',
-        );
         // If we got it from fallback, try to restore it to secure storage
         try {
           await _secureStorage.write(key: _apiKeyKey, value: fallbackKey);
-          debugPrint('StorageService: API key restored to secure storage');
         } catch (e) {
           debugPrint(
             'Warning: Could not restore API key to secure storage: $e',
@@ -88,7 +81,6 @@ class StorageService {
       debugPrint('Warning: SharedPreferences read failed: $e');
     }
 
-    debugPrint('StorageService: No API key found');
     return null;
   }
 
@@ -97,11 +89,21 @@ class StorageService {
     try {
       await _secureStorage.delete(key: _apiKeyKey);
     } catch (e) {
-      debugPrint('Warning: Secure storage delete failed: $e');
+      // Error code -34018 means entitlement not present (common on unsigned macOS apps)
+      // This is expected and we'll use SharedPreferences fallback
+      if (e.toString().contains('-34018') || e.toString().contains('entitlement')) {
+        debugPrint('StorageService: Secure storage not available (unsigned app), using fallback');
+      } else {
+        debugPrint('Warning: Secure storage delete failed: $e');
+      }
     }
-    // Also delete fallback
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('${_apiKeyKey}_fallback');
+    // Always delete fallback
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('${_apiKeyKey}_fallback');
+    } catch (e) {
+      debugPrint('Warning: Could not delete API key fallback: $e');
+    }
   }
 
   /// Save app configuration
@@ -117,17 +119,6 @@ class StorageService {
       await prefs.setString(_modelUrlKey, config.modelUrl!);
     } else {
       await prefs.remove(_modelUrlKey);
-    }
-    if (config.kaggleUsername != null) {
-      await prefs.setString(_kaggleUsernameKey, config.kaggleUsername!);
-    } else {
-      await prefs.remove(_kaggleUsernameKey);
-    }
-    if (config.kaggleKey != null) {
-      // Store Kaggle key securely
-      await _secureStorage.write(key: _kaggleKeyKey, value: config.kaggleKey!);
-    } else {
-      await _secureStorage.delete(key: _kaggleKeyKey);
     }
 
     // Always save API key if provided, even if empty (to clear it)
@@ -160,8 +151,6 @@ class StorageService {
       rewriteStyle: prefs.getString(_rewriteStyleKey) ?? 'professional',
       modelType: modelType,
       modelUrl: prefs.getString(_modelUrlKey),
-      kaggleUsername: prefs.getString(_kaggleUsernameKey),
-      kaggleKey: await _secureStorage.read(key: _kaggleKeyKey),
     );
 
     debugPrint(
