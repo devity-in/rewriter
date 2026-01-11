@@ -5,7 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_linux
   hotkey_manager_linux
-  screen_retriever
+  screen_retriever_linux
   system_tray
   window_manager
 )

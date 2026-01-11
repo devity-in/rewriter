@@ -60,16 +60,85 @@ class LocalAIService implements AIService {
       onStatusChanged?.call('initializing');
 
       // Initialize LlmInferenceEngine following MediaPipe GenAI documentation
-      // Use GPU options as per official examples
-      // Note: GPU will automatically fallback to CPU if GPU is not available
-      final options = LlmInferenceOptions.gpu(
-        modelPath: _modelPath!,
-        maxTokens: 512,
-        temperature: 0.7,
-        topK: 40,
-        sequenceBatchSize: 1,
-      );
-      _llmEngine = LlmInferenceEngine(options);
+      // Following the example pattern: try GPU first, fallback to CPU if needed
+      try {
+        // Try GPU mode first (as per official example)
+        final gpuOptions = LlmInferenceOptions.gpu(
+          modelPath: _modelPath!,
+          maxTokens: 512,
+          temperature: 0.7,
+          topK: 40,
+          sequenceBatchSize: 1,
+        );
+        _llmEngine = LlmInferenceEngine(gpuOptions);
+      } catch (e) {
+        // Check if this is a native library loading error first
+        final errorString = e.toString();
+        if (errorString.contains('native function') ||
+            errorString.contains('symbol not found') ||
+            errorString.contains('native assets') ||
+            errorString.contains('No available native assets')) {
+          throw Exception(
+            '❌ Native libraries not found for MediaPipe GenAI.\n\n'
+            'The native libraries need to be downloaded during the build process.\n'
+            'This usually means:\n'
+            '1. Native assets were not downloaded/built correctly\n'
+            '2. The build.dart script failed to download libraries from Google Cloud Storage\n'
+            '3. Network issues prevented downloading native libraries\n\n'
+            'Try these steps:\n'
+            '1. Run: ./scripts/setup_local_ai.sh\n'
+            '2. Or manually rebuild: flutter clean && flutter pub get && flutter build macos --debug\n'
+            '3. Check build logs: find build -name "*build-log*.txt"\n'
+            '4. Verify native assets: cat .dart_tool/flutter_build/*/native_assets.json\n'
+            '5. Check network connectivity (libraries download from storage.googleapis.com)\n\n'
+            'The package DOES support macOS - native libraries just need to be downloaded.\n'
+            'If the issue persists, check:\n'
+            '- https://pub.dev/packages/mediapipe_genai\n'
+            '- GitHub issues: https://github.com/google/flutter-mediapipe/issues\n\n'
+            'Original error: $errorString',
+          );
+        }
+
+        // If GPU fails but not due to native libraries, try CPU mode with cacheDir (as shown in example)
+        if (errorString.contains('GPU') || errorString.contains('gpu')) {
+          try {
+            final cacheDir = await getApplicationCacheDirectory();
+            final cpuOptions = LlmInferenceOptions.cpu(
+              modelPath: _modelPath!,
+              cacheDir: cacheDir.path,
+              maxTokens: 512,
+              temperature: 0.7,
+              topK: 40,
+            );
+            _llmEngine = LlmInferenceEngine(cpuOptions);
+          } catch (cpuError) {
+            // Check if CPU also failed due to native libraries
+            final cpuErrorString = cpuError.toString();
+            if (cpuErrorString.contains('native function') ||
+                cpuErrorString.contains('symbol not found') ||
+                cpuErrorString.contains('native assets')) {
+              throw Exception(
+                '❌ Native libraries not found for MediaPipe GenAI.\n\n'
+                'The native libraries need to be downloaded during the build process.\n'
+                'Both GPU and CPU initialization failed due to missing native libraries.\n\n'
+                'Try these steps:\n'
+                '1. Run: ./scripts/setup_local_ai.sh\n'
+                '2. Or manually rebuild: flutter clean && flutter pub get && flutter build macos --debug\n'
+                '3. Check build logs: find build -name "*build-log*.txt"\n\n'
+                'Original errors: GPU: $errorString, CPU: $cpuErrorString',
+              );
+            }
+            // Re-throw the CPU error with context
+            throw Exception(
+              'Failed to initialize MediaPipe GenAI with both GPU and CPU modes. '
+              'GPU error: $e. CPU error: $cpuError',
+            );
+          }
+        } else {
+          // Re-throw non-GPU, non-native-library errors
+          rethrow;
+        }
+      }
 
       _isInitialized = true;
       _isInitializing = false;
