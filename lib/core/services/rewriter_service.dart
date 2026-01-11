@@ -96,16 +96,22 @@ class RewriterService {
         }
       };
       
+      // Give UI time to set up progress callbacks before starting download
       // Initialize local AI service asynchronously
       // Following MediaPipe GenAI official guidelines: models must be downloaded at runtime
-      _localAIService!.initialize(
-        modelUrl: _config!.modelUrl!,
-      ).catchError((e, stackTrace) {
-        debugPrint('RewriterService: Failed to initialize local AI: $e');
-        if (!_localAIService!.isInitialized) {
-          _aiService = null;
+      // Increased delay to ensure UI callbacks are set up
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (_localAIService != null && !_localAIService!.isInitialized) {
+          _localAIService!.initialize(
+            modelUrl: _config!.modelUrl!,
+          ).catchError((e, stackTrace) {
+            debugPrint('RewriterService: Failed to initialize local AI: $e');
+            if (_localAIService != null && !_localAIService!.isInitialized) {
+              _aiService = null;
+            }
+            _onStatusChanged?.call('error');
+          });
         }
-        _onStatusChanged?.call('error');
       });
     } else {
       // Use Gemini service (needs API key)

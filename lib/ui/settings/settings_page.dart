@@ -210,11 +210,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
 
                   // Local AI Configuration Section (only shown for Local AI)
-                  if (_selectedModel == 'local')
+                  if (_selectedModel == 'local') ...[
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: _LocalAIConfigSection(
+                          key: ValueKey(config.modelUrl), // Force rebuild when URL changes
                           modelUrl: config.modelUrl,
                           onModelUrlChanged: (url) async {
                             await provider.updateConfig(
@@ -224,6 +225,14 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
                     ),
+                    const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _DownloadedModelsSection(),
+                      ),
+                    ),
+                  ],
 
                   const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
@@ -1321,6 +1330,7 @@ class _LocalAIConfigSection extends StatefulWidget {
   final ValueChanged<String?> onModelUrlChanged;
 
   const _LocalAIConfigSection({
+    super.key,
     required this.modelUrl,
     required this.onModelUrlChanged,
   });
@@ -1374,38 +1384,59 @@ class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
   void initState() {
     super.initState();
     _modelUrlController = TextEditingController(text: widget.modelUrl ?? '');
+    // Set up listeners immediately and also after frame
     _setupProgressListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupProgressListener();
+    });
   }
 
   void _setupProgressListener() {
-    // Set up progress listeners when widget is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final provider = Provider.of<AppProvider>(context, listen: false);
-      final localAIService = provider.rewriterService.localAIService;
-      if (localAIService != null) {
-        localAIService.onDownloadProgress = (downloaded, total) {
-          if (mounted) {
-            setState(() {
-              _downloadProgressBytes = downloaded;
-              _downloadTotalBytes = total;
+    if (!mounted) return;
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final localAIService = provider.rewriterService.localAIService;
+    if (localAIService != null) {
+      // Set up progress callback - ensure it's set before download starts
+      localAIService.onDownloadProgress = (downloaded, total) {
+        if (mounted) {
+          setState(() {
+            _downloadProgressBytes = downloaded;
+            _downloadTotalBytes = total;
+            // Only update status if not already initializing
+            if (_downloadStatus != 'initializing' && _downloadStatus != 'ready') {
               _downloadStatus = 'downloading';
-            });
-          }
-        };
-        localAIService.onStatusChanged = (status) {
-          if (mounted) {
-            setState(() {
-              _downloadStatus = status;
-              if (status == 'ready') {
-                _downloadProgressBytes = null;
-                _downloadTotalBytes = null;
-              }
-            });
-          }
-        };
+            }
+          });
+        }
+      };
+      
+      // Set up status callback
+      localAIService.onStatusChanged = (status) {
+        if (mounted) {
+          setState(() {
+            _downloadStatus = status;
+            if (status == 'ready' || status == 'error') {
+              // Keep progress visible briefly, then clear
+              Future.delayed(const Duration(seconds: 1), () {
+                if (mounted) {
+                  setState(() {
+                    _downloadProgressBytes = null;
+                    _downloadTotalBytes = null;
+                  });
+                }
+              });
+            }
+          });
+        }
+      };
+      
+      // Check if already downloading/initializing
+      if (localAIService.isInitializing) {
+        setState(() {
+          _downloadStatus = 'downloading';
+        });
       }
-    });
+    }
   }
 
   @override
@@ -1413,6 +1444,15 @@ class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
     super.didChangeDependencies();
     // Re-setup listeners when dependencies change (e.g., when model URL changes)
     _setupProgressListener();
+  }
+  
+  @override
+  void didUpdateWidget(_LocalAIConfigSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Re-setup listeners when widget updates (e.g., model URL changes)
+    if (oldWidget.modelUrl != widget.modelUrl) {
+      _setupProgressListener();
+    }
   }
 
   @override
@@ -1622,7 +1662,11 @@ class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
         ],
         // Download progress indicator
         if (_downloadStatus == 'downloading' ||
-            _downloadStatus == 'initializing') ...[
+            _downloadStatus == 'initializing' ||
+            (_downloadProgressBytes != null &&
+                _downloadTotalBytes != null &&
+                _downloadTotalBytes! > 0 &&
+                _downloadProgressBytes! < _downloadTotalBytes!)) ...[
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(12),
@@ -1636,30 +1680,18 @@ class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _downloadStatus == 'downloading'
-                          ? 'Downloading model...'
-                          : 'Initializing model...',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                  ],
+                Text(
+                  _downloadStatus == 'downloading'
+                      ? 'Downloading model...'
+                      : _downloadStatus == 'initializing'
+                          ? 'Initializing model...'
+                          : 'Processing model...',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
-                if (_downloadStatus == 'downloading' &&
-                    _downloadProgressBytes != null &&
+                if (_downloadProgressBytes != null &&
                     _downloadTotalBytes != null &&
                     _downloadTotalBytes! > 0) ...[
                   const SizedBox(height: 8),
@@ -1714,6 +1746,292 @@ class _LocalAIConfigSectionState extends State<_LocalAIConfigSection> {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _DownloadedModelsSection extends StatefulWidget {
+  const _DownloadedModelsSection();
+
+  @override
+  State<_DownloadedModelsSection> createState() =>
+      _DownloadedModelsSectionState();
+}
+
+class _DownloadedModelsSectionState extends State<_DownloadedModelsSection> {
+  List<Map<String, dynamic>> _models = [];
+  bool _isLoading = true;
+  String? _removingModelName;
+  int? _removeProgressBytes;
+  int? _removeTotalBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadModels();
+    _setupRemoveProgressListener();
+  }
+
+  void _setupRemoveProgressListener() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = Provider.of<AppProvider>(context, listen: false);
+      final localAIService = provider.rewriterService.localAIService;
+      if (localAIService != null) {
+        localAIService.onRemoveProgress = (removed, total, modelName) {
+          if (mounted) {
+            setState(() {
+              _removeProgressBytes = removed;
+              _removeTotalBytes = total;
+              _removingModelName = modelName;
+            });
+          }
+        };
+      }
+    });
+  }
+
+  Future<void> _loadModels() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final provider = Provider.of<AppProvider>(context, listen: false);
+      final localAIService = provider.rewriterService.localAIService;
+      if (localAIService != null) {
+        final models = await localAIService.listDownloadedModels();
+        if (mounted) {
+          setState(() {
+            _models = models;
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _models = [];
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _models = [];
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _removeModel(String modelPath, String modelName) async {
+    try {
+      final provider = Provider.of<AppProvider>(context, listen: false);
+      final localAIService = provider.rewriterService.localAIService;
+      if (localAIService != null) {
+        final success = await localAIService.removeModel(modelPath);
+        if (success && mounted) {
+          // Clear removal progress
+          setState(() {
+            _removingModelName = null;
+            _removeProgressBytes = null;
+            _removeTotalBytes = null;
+          });
+          // Reload models list
+          await _loadModels();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _removingModelName = null;
+          _removeProgressBytes = null;
+          _removeTotalBytes = null;
+        });
+      }
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) {
+      return '$bytes B';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Downloaded Models',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh',
+              onPressed: _loadModels,
+              color: colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_isLoading)
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Center(
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colorScheme.primary,
+              ),
+            ),
+          )
+        else if (_models.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No models downloaded yet. Models will appear here after downloading.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ..._models.map((model) {
+            final modelName = model['name'] as String;
+            final modelPath = model['path'] as String;
+            final modelSize = model['size'] as int;
+            final isRemoving = _removingModelName == modelName;
+
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.1),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.storage,
+                        size: 18,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          modelName,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatBytes(modelSize),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (isRemoving)
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.primary,
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          tooltip: 'Remove model',
+                          onPressed: () => _removeModel(modelPath, modelName),
+                          color: colorScheme.error,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (isRemoving &&
+                      _removeProgressBytes != null &&
+                      _removeTotalBytes != null &&
+                      _removeTotalBytes! > 0) ...[
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: _removeProgressBytes! / _removeTotalBytes!,
+                      backgroundColor:
+                          colorScheme.outline.withValues(alpha: 0.1),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Removing... ${((_removeProgressBytes! / _removeTotalBytes!) * 100).toStringAsFixed(0)}%',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
       ],
     );
   }

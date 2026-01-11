@@ -40,9 +40,9 @@ void main() async {
     // Initialize window manager for desktop
     await windowManager.ensureInitialized();
 
-    // Set window options for system tray app
+    // Set window options for desktop app
     const windowOptions = WindowOptions(
-      skipTaskbar: true,
+      skipTaskbar: false, // Show in taskbar/dock
       backgroundColor:
           Colors.white, // Use white background instead of transparent
       size: Size(800, 600),
@@ -58,29 +58,15 @@ void main() async {
     // Initialize onboarding service
     final onboardingService = OnboardingService();
 
-    // Check if onboarding is needed BEFORE hiding window
-    final hasCompletedOnboarding = await onboardingService
-        .hasCompletedOnboarding();
-
-    // Only hide window if onboarding is already complete
-    // Otherwise, show window for onboarding
-    if (hasCompletedOnboarding) {
-      try {
-        await windowManager.hide();
-      } catch (e) {
-        debugPrint('Note: Window hide called early: $e');
-      }
-    } else {
-      // Show window for onboarding
-      try {
-        await windowManager.setMinimumSize(const Size(600, 400));
-        await windowManager.setSize(const Size(800, 600));
-        await windowManager.center();
-        await windowManager.show();
-        await windowManager.focus();
-      } catch (e) {
-        debugPrint('Error showing window for onboarding: $e');
-      }
+    // Always show window - this is now a full desktop app
+    try {
+      await windowManager.setMinimumSize(const Size(600, 400));
+      await windowManager.setSize(const Size(800, 600));
+      await windowManager.center();
+      await windowManager.show();
+      await windowManager.focus();
+    } catch (e) {
+      debugPrint('Error showing window: $e');
     }
 
     // Initialize hotkey service
@@ -104,27 +90,14 @@ void main() async {
       rewriterService: rewriterService,
     );
 
-    // Initialize tray manager - simplified
+    // Initialize tray manager - optional, for convenience
     final trayManager = TrayManager(
       onSettingsClick: () async {
         try {
-          // Check if window is already visible
-          final isVisible = await windowManager.isVisible();
-
-          if (!isVisible) {
-            // Ensure window has proper size and is visible
-            await windowManager.setMinimumSize(const Size(600, 400));
-            await windowManager.setSize(const Size(800, 600));
-            await windowManager.center();
-            // Show window
-            await windowManager.show();
-            // Small delay to ensure Flutter has time to render
-            await Future.delayed(const Duration(milliseconds: 100));
-          }
-          // Focus and bring to front
+          // Focus and bring window to front
           await windowManager.focus();
         } catch (e) {
-          debugPrint('Error showing settings window: $e');
+          debugPrint('Error focusing window: $e');
         }
       },
       onQuitClick: () {
@@ -169,23 +142,10 @@ void main() async {
 
     hotkeyService.onShowSettings = () async {
       try {
-        // Check if window is already visible
-        final isVisible = await windowManager.isVisible();
-
-        if (!isVisible) {
-          // Ensure window has proper size and is visible
-          await windowManager.setMinimumSize(const Size(600, 400));
-          await windowManager.setSize(const Size(800, 600));
-          await windowManager.center();
-          // Show window
-          await windowManager.show();
-          // Small delay to ensure Flutter has time to render
-          await Future.delayed(const Duration(milliseconds: 100));
-        }
-        // Focus and bring to front
+        // Focus and bring window to front
         await windowManager.focus();
       } catch (e) {
-        debugPrint('Error showing settings via hotkey: $e');
+        debugPrint('Error focusing window via hotkey: $e');
       }
     };
 
@@ -326,14 +286,8 @@ class _RewriterAppState extends State<RewriterApp> {
       // User clicked "Get Started" - mark welcome as seen
       // Window stays visible so user can configure settings
       // The dialog always returns true now (no skip button)
-    } else {
-      // Onboarding already completed, ensure window is hidden
-      try {
-        await widget.windowManager.hide();
-      } catch (e) {
-        debugPrint('Error hiding window: $e');
-      }
     }
+    // Window always stays visible - this is a full desktop app
   }
 
   @override

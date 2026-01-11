@@ -2,6 +2,7 @@ import 'package:mediapipe_genai/mediapipe_genai.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:io';
+import 'dart:async';
 import '../models/rewrite_result.dart';
 import 'ai_service.dart';
 
@@ -16,9 +17,17 @@ class LocalAIService implements AIService {
   /// Callback for download progress: (downloaded bytes, total bytes)
   Function(int, int)? onDownloadProgress;
 
+  /// Callback for removal progress: (removed bytes, total bytes, modelName)
+  Function(int, int, String)? onRemoveProgress;
+
   /// Callback for initialization status changes
   Function(String)?
   onStatusChanged; // 'downloading', 'initializing', 'ready', 'error'
+
+  // Throttle progress updates to avoid blocking UI
+  Timer? _progressThrottleTimer;
+  DateTime? _lastProgressUpdate;
+  static const Duration _progressThrottleInterval = Duration(milliseconds: 100);
 
   /// Initialize the local AI model
   ///
@@ -45,6 +54,7 @@ class LocalAIService implements AIService {
     }
 
     _isInitializing = true;
+    // Call status callback directly - UI handles async updates
     onStatusChanged?.call('downloading');
 
     try {
@@ -57,6 +67,7 @@ class LocalAIService implements AIService {
         throw Exception('Model file does not exist: $_modelPath');
       }
 
+      // Call status callback directly - UI handles async updates
       onStatusChanged?.call('initializing');
 
       // Initialize LlmInferenceEngine following MediaPipe GenAI documentation
@@ -142,10 +153,12 @@ class LocalAIService implements AIService {
 
       _isInitialized = true;
       _isInitializing = false;
+      // Call status callback directly - UI handles async updates
       onStatusChanged?.call('ready');
     } catch (e) {
       _isInitialized = false;
       _isInitializing = false;
+      // Call status callback directly - UI handles async updates
       onStatusChanged?.call('error');
       rethrow;
     }
@@ -243,7 +256,10 @@ class LocalAIService implements AIService {
     final cachedFile = File(cachedModelPath);
     if (await cachedFile.exists()) {
       final fileSize = await cachedFile.length();
-      onDownloadProgress?.call(fileSize, fileSize); // Report 100% if cached
+      // Report 100% if cached - use immediate report
+      if (onDownloadProgress != null) {
+        onDownloadProgress!(fileSize, fileSize);
+      }
       return cachedModelPath;
     }
 
@@ -280,30 +296,35 @@ class LocalAIService implements AIService {
           final contentLength = streamedResponse.contentLength ?? 0;
           int downloadedBytes = 0;
 
-          // Download with progress tracking
-          final fileBytes = <int>[];
-          await for (final chunk in streamedResponse.stream) {
-            fileBytes.addAll(chunk);
-            downloadedBytes += chunk.length;
-
-            // Report progress if callback is set
-            if (contentLength > 0) {
-              onDownloadProgress?.call(downloadedBytes, contentLength);
-            } else {
-              // If content length unknown, report downloaded bytes
-              onDownloadProgress?.call(downloadedBytes, downloadedBytes);
-            }
-          }
-
-          // Save model file
-          await cachedFile.writeAsBytes(fileBytes);
-
-          // Report completion
+          // Report initial progress (0%) to show download has started
           if (contentLength > 0) {
-            onDownloadProgress?.call(contentLength, contentLength);
+            _reportProgressImmediate(0, contentLength);
           } else {
-            onDownloadProgress?.call(fileBytes.length, fileBytes.length);
+            _reportProgressImmediate(0, 0);
           }
+
+          // Open file for writing (streaming to avoid memory issues)
+          final sink = cachedFile.openWrite();
+
+          try {
+            // Download with progress tracking - stream directly to file
+            await for (final chunk in streamedResponse.stream) {
+              // Write chunk directly to file (non-blocking)
+              sink.add(chunk);
+              downloadedBytes += chunk.length;
+
+              // Throttle progress updates to avoid blocking UI
+              _throttledProgressUpdate(downloadedBytes, contentLength);
+            }
+
+            // Ensure all data is written
+            await sink.flush();
+          } finally {
+            await sink.close();
+          }
+
+          // Report final completion
+          _reportProgressImmediate(downloadedBytes, contentLength);
 
           return cachedModelPath;
         } finally {
@@ -326,8 +347,142 @@ class LocalAIService implements AIService {
         Exception('Failed to download model after $maxRetries attempts');
   }
 
+  /// Get the models directory path
+  Future<Directory> _getModelsDirectory() async {
+    final cacheDir = await getApplicationDocumentsDirectory();
+    final modelsDir = Directory('${cacheDir.path}/models');
+    if (!await modelsDir.exists()) {
+      await modelsDir.create(recursive: true);
+    }
+    return modelsDir;
+  }
+
+  /// List all downloaded models
+  /// Returns a list of model info: {name, path, size}
+  Future<List<Map<String, dynamic>>> listDownloadedModels() async {
+    final modelsDir = await _getModelsDirectory();
+    final files = modelsDir.listSync();
+    final models = <Map<String, dynamic>>[];
+
+    for (final file in files) {
+      if (file is File && file.path.endsWith('.task')) {
+        final stat = await file.stat();
+        models.add({
+          'name': file.path.split('/').last,
+          'path': file.path,
+          'size': stat.size,
+          'modified': stat.modified,
+        });
+      }
+    }
+
+    // Sort by modified date (newest first)
+    models.sort(
+      (a, b) =>
+          (b['modified'] as DateTime).compareTo(a['modified'] as DateTime),
+    );
+
+    return models;
+  }
+
+  /// Remove a downloaded model
+  /// [modelPath] - Full path to the model file to remove
+  /// Returns true if successful, false otherwise
+  Future<bool> removeModel(String modelPath) async {
+    try {
+      final file = File(modelPath);
+      if (!await file.exists()) {
+        return false;
+      }
+
+      final fileSize = await file.length();
+      final fileName = file.path.split('/').last;
+
+      // Report initial progress
+      onRemoveProgress?.call(0, fileSize, fileName);
+
+      // Small delay to ensure UI updates
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Delete the file
+      await file.delete();
+
+      // Report completion
+      onRemoveProgress?.call(fileSize, fileSize, fileName);
+
+      // If this was the currently loaded model, reset the service
+      if (_modelPath == modelPath) {
+        _llmEngine = null;
+        _isInitialized = false;
+        _modelPath = null;
+      }
+
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Remove a model by name
+  /// [modelName] - Name of the model file (e.g., 'model.task')
+  Future<bool> removeModelByName(String modelName) async {
+    final modelsDir = await _getModelsDirectory();
+    final modelPath = '${modelsDir.path}/$modelName';
+    return await removeModel(modelPath);
+  }
+
+  /// Get total size of all downloaded models
+  Future<int> getTotalModelsSize() async {
+    final models = await listDownloadedModels();
+    int totalSize = 0;
+    for (final model in models) {
+      totalSize += model['size'] as int;
+    }
+    return totalSize;
+  }
+
+  /// Throttle progress updates to avoid blocking UI thread
+  void _throttledProgressUpdate(int downloadedBytes, int totalBytes) {
+    final now = DateTime.now();
+
+    // If this is the first update or enough time has passed, update immediately
+    if (_lastProgressUpdate == null ||
+        now.difference(_lastProgressUpdate!) >= _progressThrottleInterval) {
+      _reportProgressImmediate(downloadedBytes, totalBytes);
+      _lastProgressUpdate = now;
+      return;
+    }
+
+    // Otherwise, cancel existing timer and schedule update
+    _progressThrottleTimer?.cancel();
+    _progressThrottleTimer = Timer(_progressThrottleInterval, () {
+      _reportProgressImmediate(downloadedBytes, totalBytes);
+      _lastProgressUpdate = DateTime.now();
+    });
+  }
+
+  /// Report progress immediately (used for final update)
+  void _reportProgressImmediate(int downloadedBytes, int totalBytes) {
+    // Cancel any pending throttled updates
+    _progressThrottleTimer?.cancel();
+    _progressThrottleTimer = null;
+    _lastProgressUpdate = DateTime.now();
+
+    // Call progress callback directly - UI handles setState asynchronously
+    if (onDownloadProgress != null) {
+      if (totalBytes > 0) {
+        onDownloadProgress!(downloadedBytes, totalBytes);
+      } else {
+        onDownloadProgress!(downloadedBytes, downloadedBytes);
+      }
+    }
+  }
+
   /// Dispose resources
   void dispose() {
+    _progressThrottleTimer?.cancel();
+    _progressThrottleTimer = null;
+    _lastProgressUpdate = null;
     _llmEngine = null;
     _isInitialized = false;
   }
