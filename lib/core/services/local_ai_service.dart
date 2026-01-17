@@ -61,6 +61,9 @@ class LocalAIService implements AIService {
       // Download model from URL at runtime (required by MediaPipe GenAI)
       _modelPath = await _downloadModel(modelUrl);
 
+      // Print the model path for debugging
+      print('📦 Model downloaded to: $_modelPath');
+
       // Validate model file exists
       final modelFile = File(_modelPath!);
       if (!await modelFile.exists()) {

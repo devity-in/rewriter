@@ -59,7 +59,7 @@ echo ""
 echo "Step 4: Building native assets..."
 echo "   Native assets are downloaded during the build process"
 echo "   This may take a few minutes on first run (downloads native libraries)..."
-flutter build macos --debug --no-codesign 2>&1 | tee /tmp/flutter_build.log
+flutter build macos --debug 2>&1 | tee /tmp/flutter_build.log
 
 # Check for build log from mediapipe package
 BUILD_LOG=$(find build -name "*build-log*.txt" 2>/dev/null | head -1)
@@ -98,16 +98,23 @@ if [ -n "$NATIVE_ASSETS_JSON" ]; then
         else
             echo "⚠️  Warning: Native library files not found in build directory"
             echo "   The native assets JSON exists but libraries may not have downloaded"
+            echo "   Running fix script to download manually..."
+            ./scripts/fix_native_assets.sh
+            ./scripts/copy_native_libs.sh
         fi
     else
         echo "⚠️  Warning: Native assets file exists but appears empty"
         echo "   The build.dart script may have failed to download native libraries"
-        echo "   Check build logs: find build -name '*build-log*.txt'"
+        echo "   Running fix script to download manually..."
+        ./scripts/fix_native_assets.sh
+        ./scripts/copy_native_libs.sh
     fi
 else
     echo "⚠️  Warning: Native assets file not found after build"
     echo "   Native assets may not have been built"
-    echo "   Try: flutter clean && flutter pub get && flutter build macos --debug"
+    echo "   Running fix script to download manually..."
+    ./scripts/fix_native_assets.sh
+    ./scripts/copy_native_libs.sh
 fi
 echo ""
 

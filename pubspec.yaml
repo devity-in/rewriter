@@ -56,8 +56,11 @@ dependencies:
   hotkey_manager: ^0.2.3
   
   # Mediapipe GenAI for local AI model
-  mediapipe_core: ^0.0.1
-  mediapipe_genai: ^0.0.1
+  # Using local flutter-mediapipe packages for direct modifications
+  mediapipe_core:
+    path: flutter-mediapipe/packages/mediapipe-core
+  mediapipe_genai:
+    path: flutter-mediapipe/packages/mediapipe-task-genai
   path_provider: ^2.1.1
 
 dev_dependencies:
@@ -70,6 +73,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  
+  # Native assets CLI for manually building native libraries
+  # Updated to match flutter-mediapipe requirements
+  native_assets_cli: ^0.6.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
