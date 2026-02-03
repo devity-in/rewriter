@@ -49,6 +49,9 @@ dependencies:
   
   # Utilities
   intl: ^0.20.2
+
+  # Charts
+  fl_chart: ^0.66.2
   
   # Window management
   window_manager: ^0.5.1
@@ -57,10 +60,8 @@ dependencies:
   
   # Mediapipe GenAI for local AI model
   # Using local flutter-mediapipe packages for direct modifications
-  mediapipe_core:
-    path: flutter-mediapipe/packages/mediapipe-core
-  mediapipe_genai:
-    path: flutter-mediapipe/packages/mediapipe-task-genai
+  mediapipe_core: ^0.0.1
+  mediapipe_genai: ^0.0.1
   path_provider: ^2.1.1
 
 dev_dependencies:
@@ -75,8 +76,8 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   
   # Native assets CLI for manually building native libraries
-  # Updated to match flutter-mediapipe requirements
-  native_assets_cli: ^0.6.0
+  # Must match mediapipe_genai requirement (^0.3.0)
+  native_assets_cli: ^0.3.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

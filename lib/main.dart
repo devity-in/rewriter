@@ -14,7 +14,7 @@ import 'core/services/rate_limit_service.dart';
 import 'core/services/onboarding_service.dart';
 import 'ui/providers/app_provider.dart';
 import 'ui/tray/tray_manager.dart';
-import 'ui/settings/settings_page.dart';
+import 'ui/dashboard/dashboard_page.dart';
 import 'ui/onboarding/welcome_dialog.dart';
 import 'utils/constants.dart';
 
@@ -324,7 +324,7 @@ class _RewriterAppState extends State<RewriterApp> {
           ),
         ),
       ),
-      home: const SettingsPage(),
+      home: const DashboardPage(),
     );
   }
 }

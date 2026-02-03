@@ -6,8 +6,10 @@ class AppConfig {
   final int minSentenceLength;
   final int maxSentenceLength;
   final String rewriteStyle;
-  final String modelType; // 'gemini' or 'local'
+  final String modelType; // 'gemini', 'local', or 'ollama'
   final String? modelUrl; // URL to download model from at runtime (required for local AI)
+  final String? ollamaBaseUrl; // Ollama server URL (e.g. http://localhost:11434)
+  final String? ollamaModel; // Ollama model name (e.g. llama2, mistral)
 
   AppConfig({
     this.enabled = true,
@@ -18,6 +20,8 @@ class AppConfig {
     this.rewriteStyle = 'professional',
     this.modelType = 'gemini', // Default to Gemini API
     this.modelUrl,
+    this.ollamaBaseUrl,
+    this.ollamaModel,
   });
 
   AppConfig copyWith({
@@ -29,6 +33,8 @@ class AppConfig {
     String? rewriteStyle,
     String? modelType,
     String? modelUrl,
+    String? ollamaBaseUrl,
+    String? ollamaModel,
   }) {
     return AppConfig(
       enabled: enabled ?? this.enabled,
@@ -39,6 +45,8 @@ class AppConfig {
       rewriteStyle: rewriteStyle ?? this.rewriteStyle,
       modelType: modelType ?? this.modelType,
       modelUrl: modelUrl ?? this.modelUrl,
+      ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
+      ollamaModel: ollamaModel ?? this.ollamaModel,
     );
   }
 
@@ -46,6 +54,9 @@ class AppConfig {
     if (modelType == 'local') {
       // Local AI doesn't need API key, just needs model file
       return true;
+    }
+    if (modelType == 'ollama') {
+      return (ollamaModel?.trim() ?? '').isNotEmpty;
     }
     // Gemini needs API key
     return apiKey != null && apiKey!.isNotEmpty;

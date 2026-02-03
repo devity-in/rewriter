@@ -24,15 +24,17 @@ class AppProvider extends ChangeNotifier {
   bool get isEnabled => _config?.enabled ?? false;
   bool get hasApiKey {
     if (_config == null) return false;
-    // Local AI doesn't need API key, but needs model URL and initialization
+    // Local AI (MediaPipe) doesn't need API key, but needs model URL and initialization
     if (_config!.modelType == 'local') {
-      // Check if local AI service is initialized
       final localAIService = _rewriterService.localAIService;
       if (localAIService != null) {
         return localAIService.isInitialized;
       }
-      // Fallback: check if model URL is configured
       return _config!.modelUrl != null && _config!.modelUrl!.isNotEmpty;
+    }
+    // Ollama: valid when base URL and model name are set
+    if (_config!.modelType == 'ollama') {
+      return _config!.isValid;
     }
     return _config?.isValid ?? false;
   }

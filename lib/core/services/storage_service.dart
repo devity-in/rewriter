@@ -21,6 +21,8 @@ class StorageService {
   static const String _rewriteStyleKey = 'rewrite_style';
   static const String _modelTypeKey = 'model_type';
   static const String _modelUrlKey = 'model_url';
+  static const String _ollamaBaseUrlKey = 'ollama_base_url';
+  static const String _ollamaModelKey = 'ollama_model';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -120,6 +122,16 @@ class StorageService {
     } else {
       await prefs.remove(_modelUrlKey);
     }
+    if (config.ollamaBaseUrl != null) {
+      await prefs.setString(_ollamaBaseUrlKey, config.ollamaBaseUrl!);
+    } else {
+      await prefs.remove(_ollamaBaseUrlKey);
+    }
+    if (config.ollamaModel != null) {
+      await prefs.setString(_ollamaModelKey, config.ollamaModel!);
+    } else {
+      await prefs.remove(_ollamaModelKey);
+    }
 
     // Always save API key if provided, even if empty (to clear it)
     // Only save API key for Gemini model
@@ -151,6 +163,8 @@ class StorageService {
       rewriteStyle: prefs.getString(_rewriteStyleKey) ?? 'professional',
       modelType: modelType,
       modelUrl: prefs.getString(_modelUrlKey),
+      ollamaBaseUrl: prefs.getString(_ollamaBaseUrlKey),
+      ollamaModel: prefs.getString(_ollamaModelKey),
     );
 
     debugPrint(

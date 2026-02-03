@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../ui/providers/app_provider.dart';
 import '../../core/services/gemini_service.dart';
 import '../../core/services/local_ai_service.dart';
+import '../../core/services/ollama_service.dart';
 import '../../core/services/onboarding_service.dart';
 import 'api_key_dialog.dart';
 
@@ -99,13 +100,25 @@ class _SettingsPageState extends State<SettingsPage> {
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
-                  // Header
+                  // Header (with back button when opened from dashboard)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(24, 32, 24, 20),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (Navigator.canPop(context))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: IconButton(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.arrow_back_rounded),
+                                tooltip: 'Back to Dashboard',
+                                style: IconButton.styleFrom(
+                                  backgroundColor: colorScheme.surfaceContainerHighest,
+                                ),
+                              ),
+                            ),
                           Text(
                             'Settings',
                             style: theme.textTheme.headlineSmall?.copyWith(
@@ -204,6 +217,27 @@ class _SettingsPageState extends State<SettingsPage> {
                                     .markOnboardingComplete();
                               }
                             }
+                          },
+                        ),
+                      ),
+                    ),
+
+                  // Ollama Configuration Section (only shown for Ollama)
+                  if (_selectedModel == 'ollama')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _OllamaConfigSection(
+                          key: ValueKey('${config.ollamaBaseUrl}-${config.ollamaModel}'),
+                          baseUrl: config.ollamaBaseUrl,
+                          modelName: config.ollamaModel,
+                          onConfigChanged: (baseUrl, modelName) async {
+                            await provider.updateConfig(
+                              config.copyWith(
+                                ollamaBaseUrl: baseUrl,
+                                ollamaModel: modelName,
+                              ),
+                            );
                           },
                         ),
                       ),
@@ -364,7 +398,7 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isConfigured = modelType == 'local' || hasApiKey;
+    final isConfigured = modelType == 'local' || modelType == 'ollama' || hasApiKey;
     final isActive = isEnabled && isConfigured && !isLocalAIInitializing;
 
     String statusText;
@@ -386,7 +420,9 @@ class _StatusCard extends StatelessWidget {
       statusText = 'Setup Required';
       statusSubtext = modelType == 'local'
           ? 'Configure local AI model below'
-          : 'Add your API key below to get started';
+          : modelType == 'ollama'
+              ? 'Configure Ollama below'
+              : 'Add your API key below to get started';
       statusIcon = Icons.info_outline;
       statusColor = const Color(0xFFF59E0B);
     } else {
@@ -1010,6 +1046,14 @@ class _TestSectionState extends State<_TestSection> {
       _showError('Please configure your API key first');
       return;
     }
+    if (config.modelType == 'ollama') {
+      final base = config.ollamaBaseUrl?.trim() ?? '';
+      final model = config.ollamaModel?.trim() ?? '';
+      if (base.isEmpty || model.isEmpty) {
+        _showError('Please set Ollama base URL and model name first');
+        return;
+      }
+    }
 
     setState(() {
       _isTesting = true;
@@ -1019,7 +1063,25 @@ class _TestSectionState extends State<_TestSection> {
     try {
       final rewriterService = widget.provider.rewriterService;
 
-      if (config.modelType == 'local') {
+      if (config.modelType == 'ollama') {
+        final base = config.ollamaBaseUrl ?? 'http://localhost:11434';
+        final model = config.ollamaModel!.trim();
+        final ollamaService = OllamaService(baseUrl: base, model: model);
+        const testText =
+            'This is a test sentence to verify the rewriting functionality.';
+        final result = await ollamaService.rewriteText(
+          testText,
+          style: config.rewriteStyle,
+        );
+        if (mounted) {
+          setState(() {
+            _isTesting = false;
+            _testResult = result.success
+                ? 'Success! Rewritten: "${result.rewrittenText}"'
+                : 'Error: ${result.error}';
+          });
+        }
+      } else if (config.modelType == 'local') {
         if (config.modelUrl == null || config.modelUrl!.isEmpty) {
           if (mounted) {
             setState(() {
@@ -1052,6 +1114,7 @@ class _TestSectionState extends State<_TestSection> {
 
         localAIService.dispose();
       } else {
+        // Gemini
         final geminiService = GeminiService(
           apiKey: config.apiKey!,
           rateLimitService: rewriterService.rateLimitService,
@@ -1199,44 +1262,39 @@ class _ModelSelectionSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        Text(
-          'AI Model',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.onSurface,
+        Expanded(
+          child: _ModelCard(
+            model: 'gemini',
+            label: 'Gemini',
+            icon: Icons.cloud,
+            color: const Color(0xFF3B82F6),
+            isSelected: selectedModel == 'gemini',
+            onTap: () => onModelSelected('gemini'),
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _ModelCard(
-                model: 'gemini',
-                label: 'Gemini',
-                icon: Icons.cloud,
-                color: const Color(0xFF3B82F6),
-                isSelected: selectedModel == 'gemini',
-                onTap: () => onModelSelected('gemini'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ModelCard(
-                model: 'local',
-                label: 'Local AI',
-                icon: Icons.memory,
-                color: const Color(0xFF8B5CF6),
-                isSelected: selectedModel == 'local',
-                onTap: () => onModelSelected('local'),
-              ),
-            ),
-          ],
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ModelCard(
+            model: 'ollama',
+            label: 'Ollama',
+            icon: Icons.computer,
+            color: const Color(0xFF0D9488),
+            isSelected: selectedModel == 'ollama',
+            onTap: () => onModelSelected('ollama'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ModelCard(
+            model: 'local',
+            label: 'Local AI',
+            icon: Icons.memory,
+            color: const Color(0xFF8B5CF6),
+            isSelected: selectedModel == 'local',
+            onTap: () => onModelSelected('local'),
+          ),
         ),
       ],
     );
@@ -1312,7 +1370,11 @@ class _ModelCard extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                model == 'gemini' ? 'Cloud-based' : 'Local (offline)',
+                model == 'gemini'
+                    ? 'Cloud-based'
+                    : model == 'ollama'
+                        ? 'Local (Ollama)'
+                        : 'Local (offline)',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
@@ -1321,6 +1383,241 @@ class _ModelCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _OllamaConfigSection extends StatefulWidget {
+  final String? baseUrl;
+  final String? modelName;
+  final void Function(String? baseUrl, String? modelName) onConfigChanged;
+
+  const _OllamaConfigSection({
+    super.key,
+    required this.baseUrl,
+    required this.modelName,
+    required this.onConfigChanged,
+  });
+
+  @override
+  State<_OllamaConfigSection> createState() => _OllamaConfigSectionState();
+}
+
+class _OllamaConfigSectionState extends State<_OllamaConfigSection> {
+  late TextEditingController _baseUrlController;
+  late TextEditingController _modelController;
+  Timer? _debounceTimer;
+  static const _debounceDuration = Duration(milliseconds: 500);
+  bool _isTesting = false;
+  String? _testMessage;
+  List<String> _availableModels = [];
+  bool _isLoadingModels = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseUrlController = TextEditingController(
+      text: widget.baseUrl ?? 'http://localhost:11434',
+    );
+    _modelController = TextEditingController(text: widget.modelName ?? '');
+    // Persist displayed values (e.g. default base URL) so RewriterService has full config
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _notifyConfig();
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _baseUrlController.dispose();
+    _modelController.dispose();
+    super.dispose();
+  }
+
+  void _scheduleSave() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDuration, () {
+      if (mounted) _notifyConfig();
+    });
+  }
+
+  Future<void> _testConnection() async {
+    final base = _baseUrlController.text.trim();
+    final model = _modelController.text.trim();
+    if (base.isEmpty || model.isEmpty) {
+      setState(() => _testMessage = 'Enter base URL and model name');
+      return;
+    }
+    setState(() {
+      _isTesting = true;
+      _testMessage = null;
+    });
+    try {
+      final service = OllamaService(baseUrl: base, model: model);
+      final ok = await service.testConnection();
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testMessage = ok ? 'Connected. Model "$model" is available.' : 'Connection failed. Is Ollama running?';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testMessage = 'Error: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadModels() async {
+    final base = _baseUrlController.text.trim();
+    if (base.isEmpty) {
+      setState(() => _testMessage = 'Enter base URL first');
+      return;
+    }
+    setState(() {
+      _isLoadingModels = true;
+      _availableModels = [];
+    });
+    try {
+      final service = OllamaService(baseUrl: base, model: '');
+      final models = await service.listModels();
+      if (mounted) {
+        setState(() {
+          _isLoadingModels = false;
+          _availableModels = models;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingModels = false;
+          _availableModels = [];
+          _testMessage = 'Could not list models: $e';
+        });
+      }
+    }
+  }
+
+  void _notifyConfig() {
+    final base = _baseUrlController.text.trim();
+    final model = _modelController.text.trim();
+    widget.onConfigChanged(
+      base.isEmpty ? null : base,
+      model.isEmpty ? null : model,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ollama server',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _baseUrlController,
+          decoration: InputDecoration(
+            hintText: 'http://localhost:11434',
+            helperText: 'URL where Ollama is running',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          onChanged: (_) => _scheduleSave(),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Model name',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _modelController,
+                decoration: InputDecoration(
+                  hintText: 'llama2, mistral, etc.',
+                  helperText: 'Name of the model to use for rewriting',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (_) => _scheduleSave(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: _isLoadingModels ? null : _loadModels,
+              icon: _isLoadingModels
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.primary),
+                    )
+                  : const Icon(Icons.list_rounded, size: 18),
+              label: Text(_isLoadingModels ? 'Loading...' : 'List models'),
+            ),
+          ],
+        ),
+        if (_availableModels.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _availableModels
+                .map((name) => ActionChip(
+                      label: Text(name),
+                      onPressed: () {
+                        _modelController.text = name;
+                        _notifyConfig();
+                      },
+                    ))
+                .toList(),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            FilledButton.icon(
+              onPressed: _isTesting ? null : _testConnection,
+              icon: _isTesting
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: colorScheme.onPrimary),
+                    )
+                  : const Icon(Icons.link_rounded, size: 18),
+              label: Text(_isTesting ? 'Testing...' : 'Test connection'),
+            ),
+          ],
+        ),
+        if (_testMessage != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _testMessage!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: _testMessage!.startsWith('Connected')
+                  ? const Color(0xFF10B981)
+                  : colorScheme.error,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
