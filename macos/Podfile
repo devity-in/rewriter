@@ -40,14 +40,12 @@ post_install do |installer|
     flutter_additional_macos_build_settings(target)
   end
   
-  # Fix HotKey Swift warning about CustomStringConvertible conformance
+  # HotKey: use CustomStringConvertible without @retroactive so it builds on all Swift/Xcode (CI and local)
   hotkey_file = File.join(installer.sandbox.root, 'HotKey', 'Sources', 'HotKey', 'NSEventModifierFlags+HotKey.swift')
   if File.exist?(hotkey_file)
     content = File.read(hotkey_file)
-    if content.include?('extension NSEvent.ModifierFlags: CustomStringConvertible')
-      content.gsub!('extension NSEvent.ModifierFlags: CustomStringConvertible', 
-                    'extension NSEvent.ModifierFlags: @retroactive CustomStringConvertible')
-      File.write(hotkey_file, content)
-    end
+    content.gsub!('extension NSEvent.ModifierFlags: @retroactive CustomStringConvertible',
+                  'extension NSEvent.ModifierFlags: CustomStringConvertible')
+    File.write(hotkey_file, content)
   end
 end
