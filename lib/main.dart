@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:nobodywho/nobodywho.dart' as nobodywho;
 import 'core/services/storage_service.dart';
 import 'core/services/clipboard_service.dart';
 import 'core/services/language_detector.dart';
@@ -20,6 +21,9 @@ import 'utils/constants.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize NobodyWho runtime (must be called exactly once before any NobodyWho API usage)
+  await nobodywho.NobodyWho.init();
 
   // Set up global error handlers for better error reporting
   FlutterError.onError = (FlutterErrorDetails details) {

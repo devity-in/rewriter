@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../ui/providers/app_provider.dart';
 import '../../core/services/gemini_service.dart';
 import '../../core/services/local_ai_service.dart';
+import '../../core/services/nobodywho_service.dart';
 import '../../core/services/ollama_service.dart';
 import '../../core/services/onboarding_service.dart';
 import 'api_key_dialog.dart';
@@ -249,7 +250,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: _LocalAIConfigSection(
-                          key: ValueKey(config.modelUrl), // Force rebuild when URL changes
+                          key: ValueKey(config.modelUrl),
                           modelUrl: config.modelUrl,
                           onModelUrlChanged: (url) async {
                             await provider.updateConfig(
@@ -267,6 +268,18 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                   ],
+
+                  // NobodyWho Info Section (only shown for NobodyWho)
+                  if (_selectedModel == 'nobodywho')
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: _NobodyWhoInfoSection(
+                          isInitialized: provider.rewriterService.nobodyWhoService?.isInitialized ?? false,
+                          isInitializing: provider.isLocalAIInitializing,
+                        ),
+                      ),
+                    ),
 
                   const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
@@ -398,7 +411,7 @@ class _StatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isConfigured = modelType == 'local' || modelType == 'ollama' || hasApiKey;
+    final isConfigured = modelType == 'local' || modelType == 'ollama' || modelType == 'nobodywho' || hasApiKey;
     final isActive = isEnabled && isConfigured && !isLocalAIInitializing;
 
     String statusText;
@@ -422,7 +435,9 @@ class _StatusCard extends StatelessWidget {
           ? 'Configure local AI model below'
           : modelType == 'ollama'
               ? 'Configure Ollama below'
-              : 'Add your API key below to get started';
+              : modelType == 'nobodywho'
+                  ? 'Configure GGUF model below'
+                  : 'Add your API key below to get started';
       statusIcon = Icons.info_outline;
       statusColor = const Color(0xFFF59E0B);
     } else {
@@ -1054,6 +1069,9 @@ class _TestSectionState extends State<_TestSection> {
         return;
       }
     }
+    if (config.modelType == 'nobodywho') {
+      // Bundled model — no additional config needed
+    }
 
     setState(() {
       _isTesting = true;
@@ -1081,6 +1099,27 @@ class _TestSectionState extends State<_TestSection> {
                 : 'Error: ${result.error}';
           });
         }
+      } else if (config.modelType == 'nobodywho') {
+        final nwService = NobodyWhoService();
+        await nwService.initialize();
+
+        const testText =
+            'This is a test sentence to verify the rewriting functionality.';
+        final result = await nwService.rewriteText(
+          testText,
+          style: config.rewriteStyle,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isTesting = false;
+            _testResult = result.success
+                ? 'Success! Rewritten: "${result.rewrittenText}"'
+                : 'Error: ${result.error}';
+          });
+        }
+
+        nwService.dispose();
       } else if (config.modelType == 'local') {
         if (config.modelUrl == null || config.modelUrl!.isEmpty) {
           if (mounted) {
@@ -1262,38 +1301,57 @@ class _ModelSelectionSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
       children: [
-        Expanded(
+        SizedBox(
+          width: 170,
           child: _ModelCard(
             model: 'gemini',
             label: 'Gemini',
             icon: Icons.cloud,
             color: const Color(0xFF3B82F6),
+            subtitle: 'Cloud-based',
             isSelected: selectedModel == 'gemini',
             onTap: () => onModelSelected('gemini'),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
+        SizedBox(
+          width: 170,
           child: _ModelCard(
             model: 'ollama',
             label: 'Ollama',
             icon: Icons.computer,
             color: const Color(0xFF0D9488),
+            subtitle: 'Local (Ollama)',
             isSelected: selectedModel == 'ollama',
             onTap: () => onModelSelected('ollama'),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
+        SizedBox(
+          width: 170,
+          child: _ModelCard(
+            model: 'nobodywho',
+            label: 'NobodyWho',
+            icon: Icons.smart_toy_rounded,
+            color: const Color(0xFFE11D48),
+            subtitle: 'Local GGUF',
+            isSelected: selectedModel == 'nobodywho',
+            onTap: () => onModelSelected('nobodywho'),
+          ),
+        ),
+        SizedBox(
+          width: 170,
           child: _ModelCard(
             model: 'local',
             label: 'Local AI',
             icon: Icons.memory,
             color: const Color(0xFF8B5CF6),
+            subtitle: 'MediaPipe',
             isSelected: selectedModel == 'local',
             onTap: () => onModelSelected('local'),
+            badge: 'WIP',
           ),
         ),
       ],
@@ -1306,41 +1364,49 @@ class _ModelCard extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
+  final String subtitle;
   final bool isSelected;
   final VoidCallback onTap;
+  final String? badge;
 
   const _ModelCard({
     required this.model,
     required this.label,
     required this.icon,
     required this.color,
+    required this.subtitle,
     required this.isSelected,
     required this.onTap,
+    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDisabled = badge != null;
+    final effectiveColor = isDisabled
+        ? colorScheme.onSurface.withValues(alpha: 0.35)
+        : color;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: isDisabled ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: isSelected
+            color: isSelected && !isDisabled
                 ? color.withValues(alpha: 0.1)
-                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                : colorScheme.surfaceContainerHighest.withValues(alpha: isDisabled ? 0.3 : 0.5),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected
+              color: isSelected && !isDisabled
                   ? color
                   : colorScheme.outline.withValues(alpha: 0.1),
-              width: isSelected ? 2 : 1,
+              width: isSelected && !isDisabled ? 2 : 1,
             ),
           ),
           child: Column(
@@ -1351,12 +1417,32 @@ class _ModelCard extends StatelessWidget {
                   Icon(
                     icon,
                     size: 20,
-                    color: isSelected
+                    color: isSelected && !isDisabled
                         ? color
-                        : colorScheme.onSurface.withValues(alpha: 0.6),
+                        : effectiveColor,
                   ),
                   const Spacer(),
-                  if (isSelected)
+                  if (badge != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Text(
+                        badge!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFFF59E0B),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 10,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    )
+                  else if (isSelected)
                     Icon(Icons.check_circle, size: 18, color: color),
                 ],
               ),
@@ -1365,18 +1451,16 @@ class _ModelCard extends StatelessWidget {
                 label,
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
-                  color: isSelected ? color : colorScheme.onSurface,
+                  color: isSelected && !isDisabled ? color : effectiveColor,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                model == 'gemini'
-                    ? 'Cloud-based'
-                    : model == 'ollama'
-                        ? 'Local (Ollama)'
-                        : 'Local (offline)',
+                subtitle,
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withValues(alpha: 0.6),
+                  color: isDisabled
+                      ? colorScheme.onSurface.withValues(alpha: 0.35)
+                      : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
             ],
@@ -2329,6 +2413,119 @@ class _DownloadedModelsSectionState extends State<_DownloadedModelsSection> {
               ),
             );
           }),
+      ],
+    );
+  }
+}
+
+/// Simple status/info card shown when NobodyWho is selected.
+/// No configuration is needed — the GGUF model is bundled in assets/.
+class _NobodyWhoInfoSection extends StatelessWidget {
+  final bool isInitialized;
+  final bool isInitializing;
+
+  const _NobodyWhoInfoSection({
+    required this.isInitialized,
+    required this.isInitializing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final String statusText;
+    final IconData statusIcon;
+    final Color statusColor;
+
+    if (isInitializing) {
+      statusText = 'Loading model into memory...';
+      statusIcon = Icons.hourglass_top_rounded;
+      statusColor = const Color(0xFF3B82F6);
+    } else if (isInitialized) {
+      statusText = 'Model loaded and ready';
+      statusIcon = Icons.check_circle;
+      statusColor = const Color(0xFF10B981);
+    } else {
+      statusText = 'Model will load when enabled';
+      statusIcon = Icons.info_outline;
+      statusColor = colorScheme.onSurface.withValues(alpha: 0.6);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: isInitialized
+                ? statusColor.withValues(alpha: 0.1)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isInitialized
+                  ? statusColor.withValues(alpha: 0.3)
+                  : colorScheme.outline.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(
+            children: [
+              if (isInitializing)
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: statusColor,
+                  ),
+                )
+              else
+                Icon(statusIcon, color: statusColor, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  statusText,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: colorScheme.outline.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'NobodyWho runs a bundled GGUF model entirely on your device '
+                  'with GPU acceleration. No internet connection or API key required.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

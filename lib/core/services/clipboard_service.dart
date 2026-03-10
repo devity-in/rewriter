@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:clipboard/clipboard.dart';
+import 'package:flutter/foundation.dart';
 
 /// Service for monitoring and managing clipboard
 class ClipboardService {
@@ -38,6 +39,7 @@ class ClipboardService {
       if (currentContent.isNotEmpty &&
           currentContent != _lastClipboardContent &&
           currentContent.trim().isNotEmpty) {
+        debugPrint('ClipboardService: change detected (${currentContent.length} chars)');
         _lastClipboardContent = currentContent;
         _onClipboardChanged?.call(currentContent);
       }

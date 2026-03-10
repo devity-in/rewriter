@@ -6,6 +6,7 @@ import 'language_detector.dart';
 import 'gemini_service.dart';
 import 'local_ai_service.dart';
 import 'ollama_service.dart';
+import 'nobodywho_service.dart';
 import 'ai_service.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
@@ -22,6 +23,7 @@ class RewriterService {
   AIService? _aiService;
   LocalAIService? _localAIService;
   GeminiService? _geminiService;
+  NobodyWhoService? _nobodyWhoService;
   AppConfig? _config;
   Timer? _debounceTimer;
   String? _pendingText;
@@ -68,6 +70,7 @@ class RewriterService {
       _aiService = null;
       _geminiService = null;
       _localAIService = null;
+      _nobodyWhoService = null;
       return;
     }
 
@@ -78,6 +81,7 @@ class RewriterService {
           'RewriterService: Ollama model name is required.',
         );
         _localAIService = null;
+        _nobodyWhoService = null;
         _aiService = null;
         _geminiService = null;
         return;
@@ -90,16 +94,44 @@ class RewriterService {
         model: model,
       );
       _localAIService = null;
+      _nobodyWhoService = null;
       _geminiService = null;
+    } else if (_config!.modelType == 'nobodywho') {
+      _nobodyWhoService = NobodyWhoService();
+      _aiService = _nobodyWhoService;
+      _geminiService = null;
+      _localAIService = null;
+
+      _nobodyWhoService!.onStatusChanged = (String status) {
+        if (status == 'ready') {
+          _onStatusChanged?.call('ready');
+        } else if (status == 'error') {
+          _onStatusChanged?.call('error');
+        } else if (status == 'initializing' || status == 'copying') {
+          _onStatusChanged?.call('processing');
+        }
+      };
+
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (_nobodyWhoService != null && !_nobodyWhoService!.isInitialized) {
+          _nobodyWhoService!.initialize().catchError((e, stackTrace) {
+            debugPrint('RewriterService: Failed to initialize NobodyWho: $e');
+            if (_nobodyWhoService != null &&
+                !_nobodyWhoService!.isInitialized) {
+              _aiService = null;
+            }
+            _onStatusChanged?.call('error');
+          });
+        }
+      });
     } else if (_config!.modelType == 'local') {
-      // Use local AI service (doesn't need API key)
-      // MediaPipe GenAI requires models to be downloaded at runtime from a URL
       if (_config!.modelUrl == null || _config!.modelUrl!.isEmpty) {
         debugPrint(
           'RewriterService: Local AI model URL not configured. '
           'MediaPipe GenAI requires models to be downloaded at runtime.',
         );
         _localAIService = null;
+        _nobodyWhoService = null;
         _aiService = null;
         return;
       }
@@ -107,8 +139,8 @@ class RewriterService {
       _localAIService = LocalAIService();
       _aiService = _localAIService;
       _geminiService = null;
+      _nobodyWhoService = null;
       
-      // Set up status callbacks for progress tracking
       _localAIService!.onStatusChanged = (String status) {
         if (status == 'ready') {
           _onStatusChanged?.call('ready');
@@ -119,10 +151,6 @@ class RewriterService {
         }
       };
       
-      // Give UI time to set up progress callbacks before starting download
-      // Initialize local AI service asynchronously
-      // Following MediaPipe GenAI official guidelines: models must be downloaded at runtime
-      // Increased delay to ensure UI callbacks are set up
       Future.delayed(const Duration(milliseconds: 300), () {
         if (_localAIService != null && !_localAIService!.isInitialized) {
           _localAIService!.initialize(
@@ -137,7 +165,6 @@ class RewriterService {
         }
       });
     } else {
-      // Use Gemini service (needs API key)
       if (_config!.isValid) {
         _geminiService = GeminiService(
           apiKey: _config!.apiKey!,
@@ -149,6 +176,7 @@ class RewriterService {
         _aiService = null;
       }
       _localAIService = null;
+      _nobodyWhoService = null;
     }
   }
 
@@ -157,6 +185,9 @@ class RewriterService {
 
   /// Get local AI service (for UI access to check initialization status)
   LocalAIService? get localAIService => _localAIService;
+
+  /// Get NobodyWho service (for UI access to check initialization status)
+  NobodyWhoService? get nobodyWhoService => _nobodyWhoService;
 
   /// Get history service (for dashboard and history UI)
   HistoryService get historyService => _historyService;
@@ -185,23 +216,37 @@ class RewriterService {
 
   /// Handle clipboard content change
   void _handleClipboardChange(String text) {
+    debugPrint('RewriterService: clipboard changed, length=${text.length}');
+
     if (_config == null || !_config!.enabled) {
+      debugPrint('RewriterService: skipped — config null or disabled');
       return;
     }
     if (_isProcessing) {
+      debugPrint('RewriterService: skipped — already processing');
       return;
     }
     if (_aiService == null) {
+      debugPrint('RewriterService: skipped — aiService is null');
       return;
     }
 
     // For local AI (MediaPipe), check if it's actually initialized before processing
     if (_config?.modelType == 'local' && _localAIService != null) {
       if (!_localAIService!.isInitialized) {
+        debugPrint('RewriterService: skipped — local AI not initialized');
         return;
       }
     }
-    // Ollama is always "ready" once base URL and model are set
+    // For NobodyWho, check initialization before processing
+    if (_config?.modelType == 'nobodywho' && _nobodyWhoService != null) {
+      if (!_nobodyWhoService!.isInitialized) {
+        debugPrint('RewriterService: skipped — NobodyWho not initialized');
+        return;
+      }
+    }
+
+    debugPrint('RewriterService: scheduling rewrite (debounce=${_config?.debounceMs ?? 1000}ms)');
 
     // Cancel previous debounce timer
     _debounceTimer?.cancel();
@@ -216,16 +261,22 @@ class RewriterService {
 
   /// Process clipboard text
   Future<void> _processClipboardText(String text) async {
-    if (_isProcessing) return;
+    debugPrint('RewriterService: processClipboardText called, text="${text.length > 60 ? '${text.substring(0, 60)}...' : text}"');
+    if (_isProcessing) {
+      debugPrint('RewriterService: processClipboardText — already processing');
+      return;
+    }
 
     // Check if text is English
     if (!_languageDetector.isEnglish(text)) {
+      debugPrint('RewriterService: rejected — not English');
       return;
     }
 
     // Extract sentences
     final sentences = _languageDetector.extractSentences(text);
     if (sentences.isEmpty) {
+      debugPrint('RewriterService: rejected — no sentences');
       return;
     }
 
@@ -240,6 +291,7 @@ class RewriterService {
         .toList();
 
     if (validSentences.isEmpty) {
+      debugPrint('RewriterService: rejected — no valid sentences (extracted ${sentences.length} but none passed validation)');
       return;
     }
 
@@ -249,8 +301,11 @@ class RewriterService {
         : text;
 
     if (textToRewrite.length > (_config?.maxSentenceLength ?? 500)) {
+      debugPrint('RewriterService: rejected — text too long (${textToRewrite.length} > ${_config?.maxSentenceLength ?? 500})');
       return;
     }
+
+    debugPrint('RewriterService: sending to AI for rewrite (${textToRewrite.length} chars)');
     _isProcessing = true;
     _lastOriginalText = textToRewrite;
     _onStatusChanged?.call('processing');
@@ -335,12 +390,14 @@ class RewriterService {
 
   /// Update configuration
   Future<void> updateConfig(AppConfig config) async {
-    // Dispose old local AI service if switching away from it
     if (_config?.modelType == 'local' && config.modelType != 'local') {
       _localAIService?.dispose();
       _localAIService = null;
     }
-    // No disposal needed when switching away from Ollama
+    if (_config?.modelType == 'nobodywho' && config.modelType != 'nobodywho') {
+      _nobodyWhoService?.dispose();
+      _nobodyWhoService = null;
+    }
 
     _config = config;
     await _storageService.saveConfig(config);
@@ -358,7 +415,7 @@ class RewriterService {
     _debounceTimer?.cancel();
   }
 
-  /// Strips <think>...</think> blocks and any leading/trailing backticks from AI output.
+  // Strips <think>...</think> blocks and any leading/trailing backticks from AI output.
   static String _stripThinkTags(String text) {
     if (text.isEmpty) return text;
     String s = text.trim();
@@ -382,6 +439,7 @@ class RewriterService {
   void dispose() {
     stop();
     _localAIService?.dispose();
+    _nobodyWhoService?.dispose();
     _clipboardService.dispose();
   }
 }

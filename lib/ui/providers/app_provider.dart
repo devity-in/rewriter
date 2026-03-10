@@ -24,7 +24,6 @@ class AppProvider extends ChangeNotifier {
   bool get isEnabled => _config?.enabled ?? false;
   bool get hasApiKey {
     if (_config == null) return false;
-    // Local AI (MediaPipe) doesn't need API key, but needs model URL and initialization
     if (_config!.modelType == 'local') {
       final localAIService = _rewriterService.localAIService;
       if (localAIService != null) {
@@ -32,18 +31,28 @@ class AppProvider extends ChangeNotifier {
       }
       return _config!.modelUrl != null && _config!.modelUrl!.isNotEmpty;
     }
-    // Ollama: valid when base URL and model name are set
+    if (_config!.modelType == 'nobodywho') {
+      final nwService = _rewriterService.nobodyWhoService;
+      if (nwService != null) {
+        return nwService.isInitialized;
+      }
+      return _config!.isValid;
+    }
     if (_config!.modelType == 'ollama') {
       return _config!.isValid;
     }
     return _config?.isValid ?? false;
   }
 
-  /// Check if local AI is currently initializing
+  /// Check if local AI or NobodyWho is currently initializing
   bool get isLocalAIInitializing {
-    if (_config?.modelType != 'local') return false;
-    final localAIService = _rewriterService.localAIService;
-    return localAIService?.isInitializing ?? false;
+    if (_config?.modelType == 'local') {
+      return _rewriterService.localAIService?.isInitializing ?? false;
+    }
+    if (_config?.modelType == 'nobodywho') {
+      return _rewriterService.nobodyWhoService?.isInitializing ?? false;
+    }
+    return false;
   }
 
   RewriterService get rewriterService => _rewriterService;

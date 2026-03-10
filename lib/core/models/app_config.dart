@@ -6,7 +6,7 @@ class AppConfig {
   final int minSentenceLength;
   final int maxSentenceLength;
   final String rewriteStyle;
-  final String modelType; // 'gemini', 'local', or 'ollama'
+  final String modelType; // 'gemini', 'local', 'ollama', or 'nobodywho'
   final String? modelUrl; // URL to download model from at runtime (required for local AI)
   final String? ollamaBaseUrl; // Ollama server URL (e.g. http://localhost:11434)
   final String? ollamaModel; // Ollama model name (e.g. llama2, mistral)
@@ -18,7 +18,7 @@ class AppConfig {
     this.minSentenceLength = 10,
     this.maxSentenceLength = 500,
     this.rewriteStyle = 'professional',
-    this.modelType = 'gemini', // Default to Gemini API
+    this.modelType = 'gemini',
     this.modelUrl,
     this.ollamaBaseUrl,
     this.ollamaModel,
@@ -52,13 +52,15 @@ class AppConfig {
 
   bool get isValid {
     if (modelType == 'local') {
-      // Local AI doesn't need API key, just needs model file
+      return true;
+    }
+    if (modelType == 'nobodywho') {
+      // Bundled model — always valid once selected
       return true;
     }
     if (modelType == 'ollama') {
       return (ollamaModel?.trim() ?? '').isNotEmpty;
     }
-    // Gemini needs API key
     return apiKey != null && apiKey!.isNotEmpty;
   }
 }
