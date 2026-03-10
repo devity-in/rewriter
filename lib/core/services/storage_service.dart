@@ -149,7 +149,7 @@ class StorageService {
   Future<AppConfig> loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
     final modelType =
-        prefs.getString(_modelTypeKey) ?? 'gemini'; // Default to Gemini API
+        prefs.getString(_modelTypeKey) ?? 'nobodywho';
 
     // Only load API key for Gemini model
     final apiKey = modelType == 'gemini' ? await getApiKey() : null;

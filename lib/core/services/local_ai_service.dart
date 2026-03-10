@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:mediapipe_genai/mediapipe_genai.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
@@ -62,7 +63,7 @@ class LocalAIService implements AIService {
       _modelPath = await _downloadModel(modelUrl);
 
       // Print the model path for debugging
-      print('📦 Model downloaded to: $_modelPath');
+      debugPrint('📦 Model downloaded to: $_modelPath');
 
       // Validate model file exists
       final modelFile = File(_modelPath!);

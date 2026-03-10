@@ -68,7 +68,7 @@ class _SettingsPageState extends State<SettingsPage> {
       text: (config?.maxSentenceLength ?? 500).toString(),
     );
     _selectedStyle = config?.rewriteStyle ?? 'professional';
-    _selectedModel = config?.modelType ?? 'gemini'; // Default to Gemini API
+    _selectedModel = config?.modelType ?? 'nobodywho';
   }
 
   @override

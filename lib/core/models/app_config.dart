@@ -18,7 +18,7 @@ class AppConfig {
     this.minSentenceLength = 10,
     this.maxSentenceLength = 500,
     this.rewriteStyle = 'professional',
-    this.modelType = 'gemini',
+    this.modelType = 'nobodywho',
     this.modelUrl,
     this.ollamaBaseUrl,
     this.ollamaModel,

@@ -430,8 +430,8 @@ class RewriterService {
       s = (s.substring(0, start) + s.substring(end + closeTag.length)).trim();
     }
     // Trim leading/trailing backticks (e.g. from markdown code blocks)
-    while (s.startsWith('`')) s = s.substring(1).trim();
-    while (s.endsWith('`')) s = s.substring(0, s.length - 1).trim();
+    while (s.startsWith('`')) { s = s.substring(1).trim(); }
+    while (s.endsWith('`')) { s = s.substring(0, s.length - 1).trim(); }
     return s.trim();
   }
 
