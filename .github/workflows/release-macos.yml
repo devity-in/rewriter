@@ -18,6 +18,11 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Download model asset
+        run: gh release download model-assets --pattern 'model.gguf' --dir assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Get dependencies
         run: flutter pub get
 

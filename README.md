@@ -56,12 +56,19 @@ Download the latest `Rewriter-v*.dmg` from the [Releases](../../releases) page, 
    cd rewriter
    ```
 
-2. **Install dependencies**
+2. **Download the bundled model**
+
+   The GGUF model (~462 MB) is too large for Git and is hosted as a GitHub Release asset instead:
+   ```bash
+   gh release download model-assets --pattern 'model.gguf' --dir assets
+   ```
+
+3. **Install dependencies**
    ```bash
    flutter pub get
    ```
 
-3. **Run the application**
+4. **Run the application**
    ```bash
    flutter run -d macos
    ```
@@ -181,10 +188,22 @@ flutter build macos --release
 ```
 
 ### Releases (DMG via GitHub Actions)
-Pushing a version tag builds the macOS app, creates a DMG, and uploads it to a GitHub Release:
+
+The CI workflow automatically downloads the model from the `model-assets` release before building. Trigger a release build via `workflow_dispatch` on the Actions tab.
+
+#### Managing the Model Asset
+
+The GGUF model is stored as a GitHub Release asset (not in Git) because it exceeds GitHub's 100 MB file-size limit.
+
+**First-time setup** (upload the model):
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+gh release create model-assets --title "Model Assets" --notes "Large binary assets for CI builds"
+gh release upload model-assets assets/model.gguf
+```
+
+**Updating the model**:
+```bash
+gh release upload model-assets assets/model.gguf --clobber
 ```
 
 ## Configuration
