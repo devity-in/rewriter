@@ -27,7 +27,10 @@ else
 fi
 
 APP_NAME="Rewriter"
+OUTPUT_DIR="$PROJECT_ROOT/dist"
+mkdir -p "$OUTPUT_DIR"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
 APP_PATH="build/macos/Build/Products/Release/Rewriter.app"
 
 echo "==> Building $APP_NAME $VERSION"
@@ -85,10 +88,10 @@ fi
 # Package DMG with drag-to-Applications layout
 # ---------------------------------------------------------------------------
 echo ""
-echo "==> Creating DMG: $DMG_NAME"
+echo "==> Creating DMG: $DMG_PATH"
 
-rm -f "$DMG_NAME"
-DMG_RW="${DMG_NAME%.dmg}-rw.dmg"
+rm -f "$DMG_PATH"
+DMG_RW="$OUTPUT_DIR/${DMG_NAME%.dmg}-rw.dmg"
 rm -f "$DMG_RW"
 
 DMG_SIZE_KB=$(du -sk "$APP_PATH" | cut -f1)
@@ -141,10 +144,10 @@ APPLESCRIPT
   hdiutil detach "$MOUNT_DIR" -quiet
 fi
 
-hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$DMG_NAME"
+hdiutil convert "$DMG_RW" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH"
 rm -f "$DMG_RW"
 
-DMG_SIZE="$(du -h "$DMG_NAME" | cut -f1)"
+DMG_SIZE="$(du -h "$DMG_PATH" | cut -f1)"
 echo ""
 echo "==> Done! DMG created:"
-echo "    $PROJECT_ROOT/$DMG_NAME  ($DMG_SIZE)"
+echo "    $DMG_PATH  ($DMG_SIZE)"

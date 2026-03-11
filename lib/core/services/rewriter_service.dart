@@ -8,6 +8,7 @@ import 'local_ai_service.dart';
 import 'ollama_service.dart';
 import 'nobodywho_service.dart';
 import 'ai_service.dart';
+import 'platform_service.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
 import 'history_service.dart';
@@ -19,6 +20,7 @@ class RewriterService {
   final LanguageDetector _languageDetector;
   final StorageService _storageService;
   final RateLimitService _rateLimitService;
+  final PlatformService _platformService;
 
   AIService? _aiService;
   LocalAIService? _localAIService;
@@ -52,10 +54,12 @@ class RewriterService {
     required LanguageDetector languageDetector,
     required StorageService storageService,
     RateLimitService? rateLimitService,
+    PlatformService? platformService,
   }) : _clipboardService = clipboardService,
        _languageDetector = languageDetector,
        _storageService = storageService,
-       _rateLimitService = rateLimitService ?? RateLimitService() {
+       _rateLimitService = rateLimitService ?? RateLimitService(),
+       _platformService = platformService ?? PlatformService() {
     _initialize();
   }
 
@@ -249,13 +253,39 @@ class RewriterService {
       }
     }
 
-    debugPrint('RewriterService: scheduling rewrite (debounce=${_config?.debounceMs ?? 1000}ms)');
-
     // Cancel previous debounce timer
     _debounceTimer?.cancel();
-
-    // Set new debounce timer
     _pendingText = text;
+
+    // App filter check (async) runs before scheduling the debounce
+    _checkAppFilterThenSchedule(text);
+  }
+
+  Future<void> _checkAppFilterThenSchedule(String text) async {
+    final mode = _config?.appFilterMode ?? 'all';
+    if (mode != 'all') {
+      final frontApp = await _platformService.getFrontmostApp();
+      final bundleId = frontApp?.bundleId ?? '';
+      if (mode == 'allowlist') {
+        final allowed = _config!.allowedApps.any((a) => a.bundleId == bundleId);
+        if (!allowed) {
+          debugPrint('RewriterService: skipped — $bundleId not in allowlist');
+          return;
+        }
+      } else if (mode == 'blocklist') {
+        final blocked = _config!.blockedApps.any((a) => a.bundleId == bundleId);
+        if (blocked) {
+          debugPrint('RewriterService: skipped — $bundleId is blocklisted');
+          return;
+        }
+      }
+      debugPrint('RewriterService: app filter passed ($bundleId)');
+    }
+
+    if (_pendingText != text) return; // superseded by a newer clipboard change
+
+    debugPrint('RewriterService: scheduling rewrite (debounce=${_config?.debounceMs ?? 1000}ms)');
+    _debounceTimer?.cancel();
     _debounceTimer = Timer(
       Duration(milliseconds: _config?.debounceMs ?? 1000),
       () => _processClipboardText(_pendingText!),

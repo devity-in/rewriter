@@ -24,6 +24,9 @@ class StorageService {
   static const String _ollamaModelKey = 'ollama_model';
   static const String _themeModeKey = 'theme_mode';
   static const String _customStylesKey = 'custom_styles';
+  static const String _appFilterModeKey = 'app_filter_mode';
+  static const String _allowedAppsKey = 'allowed_apps';
+  static const String _blockedAppsKey = 'blocked_apps';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -139,6 +142,13 @@ class StorageService {
     final stylesJson = config.customStyles.map((s) => jsonEncode(s.toJson())).toList();
     await prefs.setStringList(_customStylesKey, stylesJson);
 
+    // Persist app filter
+    await prefs.setString(_appFilterModeKey, config.appFilterMode);
+    final allowedJson = config.allowedApps.map((a) => jsonEncode(a.toJson())).toList();
+    await prefs.setStringList(_allowedAppsKey, allowedJson);
+    final blockedJson = config.blockedApps.map((a) => jsonEncode(a.toJson())).toList();
+    await prefs.setStringList(_blockedAppsKey, blockedJson);
+
     if (config.modelType == 'gemini') {
       if (config.apiKey != null) {
         await saveApiKey(config.apiKey!);
@@ -169,6 +179,24 @@ class StorageService {
         .whereType<CustomStyle>()
         .toList();
 
+    // Load app filter
+    final allowedAppsJson = prefs.getStringList(_allowedAppsKey) ?? [];
+    final allowedApps = allowedAppsJson
+        .map((s) {
+          try { return FilteredApp.fromJson(jsonDecode(s) as Map<String, dynamic>); }
+          catch (_) { return null; }
+        })
+        .whereType<FilteredApp>()
+        .toList();
+    final blockedAppsJson = prefs.getStringList(_blockedAppsKey) ?? [];
+    final blockedApps = blockedAppsJson
+        .map((s) {
+          try { return FilteredApp.fromJson(jsonDecode(s) as Map<String, dynamic>); }
+          catch (_) { return null; }
+        })
+        .whereType<FilteredApp>()
+        .toList();
+
     final config = AppConfig(
       enabled: prefs.getBool(_enabledKey) ?? true,
       apiKey: apiKey,
@@ -182,6 +210,9 @@ class StorageService {
       ollamaModel: prefs.getString(_ollamaModelKey),
       themeMode: prefs.getString(_themeModeKey) ?? 'system',
       customStyles: customStyles,
+      appFilterMode: prefs.getString(_appFilterModeKey) ?? 'all',
+      allowedApps: allowedApps,
+      blockedApps: blockedApps,
     );
 
     debugPrint(

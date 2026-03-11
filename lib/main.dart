@@ -94,11 +94,10 @@ void main() async {
       rewriterService: rewriterService,
     );
 
-    // Initialize tray manager - optional, for convenience
+    // Initialize tray manager
     final trayManager = TrayManager(
       onSettingsClick: () async {
         try {
-          // Focus and bring window to front
           await windowManager.focus();
         } catch (e) {
           debugPrint('Error focusing window: $e');
@@ -109,6 +108,12 @@ void main() async {
       },
       onToggleClick: () {
         appProvider.toggleEnabled();
+      },
+      onStyleChanged: (style) {
+        final cfg = appProvider.config;
+        if (cfg != null) {
+          appProvider.updateConfig(cfg.copyWith(rewriteStyle: style));
+        }
       },
     );
 
@@ -165,18 +170,26 @@ void main() async {
       await trayManager.initialize();
       debugPrint('Tray manager initialized successfully');
 
-      // Wait for app provider to initialize, then set initial menu state
-      Future.delayed(const Duration(milliseconds: 100), () async {
-        if (appProvider.isInitialized) {
-          await trayManager.updateMenu(appProvider.isEnabled);
+      void syncTray() {
+        final cfg = appProvider.config;
+        if (cfg != null) {
+          trayManager.updateConfig(
+            enabled: cfg.enabled,
+            modelType: cfg.modelType,
+            rewriteStyle: cfg.rewriteStyle,
+            appFilterMode: cfg.appFilterMode,
+          );
         }
+      }
+
+      // Set initial menu state once provider is ready
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (appProvider.isInitialized) syncTray();
       });
 
-      // Listen to enabled state changes and update tray menu
+      // Keep tray in sync whenever config changes
       appProvider.addListener(() {
-        if (appProvider.isInitialized) {
-          trayManager.updateMenu(appProvider.isEnabled);
-        }
+        if (appProvider.isInitialized) syncTray();
       });
     } catch (e) {
       debugPrint('Error initializing tray manager: $e');
@@ -274,22 +287,14 @@ class _RewriterAppState extends State<RewriterApp> {
       final navigator = _navigatorKey.currentState;
       if (navigator == null || !navigator.mounted) return;
 
-      // Show welcome dialog
-      await showDialog<bool>(
+      await showDialog<void>(
         context: navigator.context,
         barrierDismissible: false,
         builder: (context) => WelcomeDialog(
           onboardingService: widget.onboardingService,
-          onComplete: () {
-            // Callback called after dialog pops - no need to pop again
-            // The button already handles popping the dialog
-          },
+          onComplete: () {},
         ),
       );
-
-      // User clicked "Get Started" - mark welcome as seen
-      // Window stays visible so user can configure settings
-      // The dialog always returns true now (no skip button)
     }
     // Window always stays visible - this is a full desktop app
   }

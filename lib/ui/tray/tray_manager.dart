@@ -10,11 +10,20 @@ class TrayManager {
   final Function()? onSettingsClick;
   final Function()? onQuitClick;
   final Function()? onToggleClick;
+  final Function(String style)? onStyleChanged;
 
   bool _isEnabled = false;
-  String _status = 'idle'; // 'idle', 'processing', 'ready', 'error'
+  String _status = 'idle';
+  String _modelType = 'nobodywho';
+  String _rewriteStyle = 'professional';
+  String _appFilterMode = 'all';
 
-  TrayManager({this.onSettingsClick, this.onQuitClick, this.onToggleClick});
+  TrayManager({
+    this.onSettingsClick,
+    this.onQuitClick,
+    this.onToggleClick,
+    this.onStyleChanged,
+  });
 
   /// Get the icon path for the system tray
   Future<String> _getIconPath() async {
@@ -91,68 +100,136 @@ class TrayManager {
     }
   }
 
-  /// Create context menu - simplified to show only status and settings
-  Future<void> _createMenu() async {
-    final menuItems = <MenuItemBase>[];
-
-    // Show status
-    String statusLabel;
+  String get _statusLabel {
     switch (_status) {
       case 'processing':
-        statusLabel = '⏳ Processing...';
-        break;
+        return '⏳ Rewriting...';
       case 'ready':
-        statusLabel = '✅ Ready';
-        break;
+        return '✅ Ready';
       case 'error':
-        statusLabel = '❌ Error';
-        break;
+        return '❌ Error';
       default:
-        statusLabel = _isEnabled ? '✓ Active' : '○ Inactive';
+        return _isEnabled ? '✅ Active' : '⏸ Paused';
     }
-
-    menuItems.add(MenuItemLabel(label: statusLabel, onClicked: (menuItem) {}));
-    menuItems.add(MenuSeparator());
-
-    // Settings
-    menuItems.add(
-      MenuItemLabel(
-        label: 'Settings',
-        onClicked: (menuItem) {
-          onSettingsClick?.call();
-        },
-      ),
-    );
-
-    menuItems.add(MenuSeparator());
-
-    // Quit
-    menuItems.add(
-      MenuItemLabel(
-        label: 'Quit',
-        onClicked: (menuItem) {
-          onQuitClick?.call();
-        },
-      ),
-    );
-
-    await _menu.buildFrom(menuItems);
   }
 
-  /// Update menu based on enabled state
-  Future<void> updateMenu(bool enabled) async {
-    _isEnabled = enabled;
+  String get _modelLabel {
+    switch (_modelType) {
+      case 'gemini':
+        return 'Gemini';
+      case 'ollama':
+        return 'Ollama';
+      case 'local':
+        return 'Local AI';
+      case 'nobodywho':
+        return 'On-device';
+      default:
+        return _modelType;
+    }
+  }
+
+  String _styleLabel(String style) {
+    switch (style) {
+      case 'professional':
+        return 'Professional';
+      case 'casual':
+        return 'Casual';
+      case 'concise':
+        return 'Concise';
+      case 'academic':
+        return 'Academic';
+      default:
+        return style;
+    }
+  }
+
+  String get _filterLabel {
+    switch (_appFilterMode) {
+      case 'allowlist':
+        return 'Allowlist';
+      case 'blocklist':
+        return 'Blocklist';
+      default:
+        return 'All Apps';
+    }
+  }
+
+  Future<void> _createMenu() async {
+    final items = <MenuItemBase>[];
+
+    // ── Status line ──
+    items.add(MenuItemLabel(label: 'Rewriter — $_statusLabel', onClicked: (_) {}));
+    items.add(MenuSeparator());
+
+    // ── Toggle on/off ──
+    items.add(MenuItemLabel(
+      label: _isEnabled ? '⏸  Pause Rewriting' : '▶  Resume Rewriting',
+      onClicked: (_) => onToggleClick?.call(),
+    ));
+    items.add(MenuSeparator());
+
+    // ── Quick style picker ──
+    const styles = ['professional', 'casual', 'concise', 'academic'];
+    final styleSubmenu = <MenuItemBase>[];
+    for (final s in styles) {
+      final isCurrent = s == _rewriteStyle;
+      styleSubmenu.add(MenuItemLabel(
+        label: '${isCurrent ? "● " : "   "}${_styleLabel(s)}',
+        onClicked: (_) {
+          if (!isCurrent) onStyleChanged?.call(s);
+        },
+      ));
+    }
+    final styleMenu = SubMenu(label: 'Style: ${_styleLabel(_rewriteStyle)}', children: styleSubmenu);
+    items.add(styleMenu);
+
+    // ── Info line: model + filter ──
+    items.add(MenuItemLabel(label: 'Model: $_modelLabel', onClicked: (_) {}));
+    items.add(MenuItemLabel(label: 'Filter: $_filterLabel', onClicked: (_) {}));
+    items.add(MenuSeparator());
+
+    // ── Open window / Settings ──
+    items.add(MenuItemLabel(
+      label: 'Open Rewriter',
+      onClicked: (_) => onSettingsClick?.call(),
+    ));
+    items.add(MenuSeparator());
+
+    // ── Quit ──
+    items.add(MenuItemLabel(label: 'Quit', onClicked: (_) => onQuitClick?.call()));
+
+    await _menu.buildFrom(items);
+  }
+
+  Future<void> _refresh() async {
     await _createMenu();
     _systemTray.setContextMenu(_menu);
+    await _systemTray.setTitle('');
+  }
+
+  /// Update enabled state and refresh menu
+  Future<void> updateMenu(bool enabled) async {
+    _isEnabled = enabled;
+    await _refresh();
   }
 
   /// Update status and refresh menu
   Future<void> updateStatus(String status) async {
     _status = status;
-    await _createMenu();
-    _systemTray.setContextMenu(_menu);
+    await _refresh();
+  }
 
-    // Ensure title remains empty (no app name shown)
-    await _systemTray.setTitle('');
+  /// Update config-driven fields and refresh menu
+  Future<void> updateConfig({
+    required bool enabled,
+    required String modelType,
+    required String rewriteStyle,
+    required String appFilterMode,
+  }) async {
+    _isEnabled = enabled;
+    _modelType = modelType;
+    _rewriteStyle = rewriteStyle;
+    _appFilterMode = appFilterMode;
+    await _refresh();
   }
 }

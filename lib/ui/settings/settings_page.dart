@@ -10,6 +10,7 @@ import '../../core/services/local_ai_service.dart';
 import '../../core/services/nobodywho_service.dart';
 import '../../core/services/ollama_service.dart';
 import '../../core/services/onboarding_service.dart';
+import '../../core/services/platform_service.dart';
 import 'api_key_dialog.dart';
 
 /// Clean and user-friendly settings page
@@ -362,6 +363,31 @@ class _SettingsPageState extends State<SettingsPage> {
                           provider.updateConfig(
                             config.copyWith(themeMode: mode),
                           );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
+
+                  // App Filter Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SectionHeader(
+                        title: 'App Filter',
+                        subtitle: 'Choose which apps trigger rewriting',
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _AppFilterSection(
+                        config: config,
+                        onConfigChanged: (updated) {
+                          provider.updateConfig(updated);
                         },
                       ),
                     ),
@@ -2799,6 +2825,490 @@ class _ThemeOptionCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// App Filter section
+// ---------------------------------------------------------------------------
+
+class _AppFilterSection extends StatefulWidget {
+  final AppConfig config;
+  final ValueChanged<AppConfig> onConfigChanged;
+
+  const _AppFilterSection({required this.config, required this.onConfigChanged});
+
+  @override
+  State<_AppFilterSection> createState() => _AppFilterSectionState();
+}
+
+class _AppFilterSectionState extends State<_AppFilterSection> {
+  final PlatformService _platformService = PlatformService();
+
+  List<FilteredApp> get _activeList =>
+      widget.config.appFilterMode == 'allowlist'
+          ? widget.config.allowedApps
+          : widget.config.blockedApps;
+
+  void _setMode(String mode) {
+    widget.onConfigChanged(widget.config.copyWith(appFilterMode: mode));
+  }
+
+  void _addApp(FilteredApp app) {
+    if (widget.config.appFilterMode == 'allowlist') {
+      if (widget.config.allowedApps.any((a) => a.bundleId == app.bundleId)) return;
+      widget.onConfigChanged(widget.config.copyWith(
+        allowedApps: [...widget.config.allowedApps, app],
+      ));
+    } else {
+      if (widget.config.blockedApps.any((a) => a.bundleId == app.bundleId)) return;
+      widget.onConfigChanged(widget.config.copyWith(
+        blockedApps: [...widget.config.blockedApps, app],
+      ));
+    }
+  }
+
+  void _removeApp(String bundleId) {
+    if (widget.config.appFilterMode == 'allowlist') {
+      widget.onConfigChanged(widget.config.copyWith(
+        allowedApps: widget.config.allowedApps.where((a) => a.bundleId != bundleId).toList(),
+      ));
+    } else {
+      widget.onConfigChanged(widget.config.copyWith(
+        blockedApps: widget.config.blockedApps.where((a) => a.bundleId != bundleId).toList(),
+      ));
+    }
+  }
+
+  Future<void> _showPickRunningAppsDialog() async {
+    final apps = await _platformService.getRunningApps();
+    if (!mounted) return;
+
+    final existing = _activeList.map((a) => a.bundleId).toSet();
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return _RunningAppsPickerDialog(
+          apps: apps,
+          existingBundleIds: existing,
+          onPick: (info) {
+            _addApp(FilteredApp(bundleId: info.bundleId, name: info.name));
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showManualEntryDialog() async {
+    final nameController = TextEditingController();
+    final bundleIdController = TextEditingController();
+
+    final result = await showDialog<FilteredApp>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          title: const Text('Add App Manually'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'App Name',
+                    hintText: 'e.g. Slack',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: bundleIdController,
+                  decoration: const InputDecoration(
+                    labelText: 'Bundle ID',
+                    hintText: 'e.g. com.tinyspeck.slackmacgap',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tip: You can find an app\'s bundle ID by running\n'
+                  'osascript -e \'id of app "AppName"\' in Terminal.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                final bid = bundleIdController.text.trim();
+                if (bid.isEmpty) return;
+                Navigator.pop(ctx, FilteredApp(
+                  bundleId: bid,
+                  name: nameController.text.trim().isEmpty ? bid : nameController.text.trim(),
+                ));
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) _addApp(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final mode = widget.config.appFilterMode;
+    final isFiltering = mode != 'all';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Mode selector
+        Row(
+          children: [
+            _FilterModeChip(
+              label: 'All Apps',
+              icon: Icons.apps_rounded,
+              selected: mode == 'all',
+              onTap: () => _setMode('all'),
+            ),
+            const SizedBox(width: 8),
+            _FilterModeChip(
+              label: 'Allowlist',
+              icon: Icons.check_circle_outline,
+              selected: mode == 'allowlist',
+              onTap: () => _setMode('allowlist'),
+            ),
+            const SizedBox(width: 8),
+            _FilterModeChip(
+              label: 'Blocklist',
+              icon: Icons.block_rounded,
+              selected: mode == 'blocklist',
+              onTap: () => _setMode('blocklist'),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // Explanation
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                mode == 'all'
+                    ? Icons.info_outline
+                    : mode == 'allowlist'
+                        ? Icons.check_circle_outline
+                        : Icons.block_rounded,
+                size: 18,
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  mode == 'all'
+                      ? 'Text copied from any app will be rewritten.'
+                      : mode == 'allowlist'
+                          ? 'Only text copied from apps below will be rewritten.'
+                          : 'Text copied from apps below will be ignored.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // App list (only when allowlist or blocklist)
+        if (isFiltering) ...[
+          const SizedBox(height: 16),
+
+          if (_activeList.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    mode == 'allowlist' ? Icons.playlist_add : Icons.block,
+                    size: 32,
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    mode == 'allowlist'
+                        ? 'No apps in allowlist yet'
+                        : 'No apps in blocklist yet',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Add apps using the buttons below',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (_activeList.isNotEmpty)
+            ...List.generate(_activeList.length, (i) {
+              final app = _activeList[i];
+              return Padding(
+                padding: EdgeInsets.only(top: i == 0 ? 0 : 6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.apps_rounded,
+                        size: 20,
+                        color: colorScheme.primary.withValues(alpha: 0.7),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              app.name,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Text(
+                              app.bundleId,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.onSurface.withValues(alpha: 0.5),
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close_rounded, size: 18,
+                          color: colorScheme.onSurface.withValues(alpha: 0.4)),
+                        onPressed: () => _removeApp(app.bundleId),
+                        splashRadius: 18,
+                        tooltip: 'Remove',
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+
+          const SizedBox(height: 12),
+
+          // Add buttons
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _showPickRunningAppsDialog,
+                icon: const Icon(Icons.app_shortcut_rounded, size: 16),
+                label: const Text('Pick from Running Apps'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  textStyle: theme.textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _showManualEntryDialog,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Add Manually'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  textStyle: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _FilterModeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterModeChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: selected
+          ? colorScheme.primary.withValues(alpha: 0.12)
+          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected
+                  ? colorScheme.primary.withValues(alpha: 0.4)
+                  : colorScheme.outline.withValues(alpha: 0.12),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16,
+                color: selected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  color: selected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RunningAppsPickerDialog extends StatefulWidget {
+  final List<AppInfo> apps;
+  final Set<String> existingBundleIds;
+  final ValueChanged<AppInfo> onPick;
+
+  const _RunningAppsPickerDialog({
+    required this.apps,
+    required this.existingBundleIds,
+    required this.onPick,
+  });
+
+  @override
+  State<_RunningAppsPickerDialog> createState() => _RunningAppsPickerDialogState();
+}
+
+class _RunningAppsPickerDialogState extends State<_RunningAppsPickerDialog> {
+  String _search = '';
+
+  List<AppInfo> get _filtered {
+    if (_search.isEmpty) return widget.apps;
+    final q = _search.toLowerCase();
+    return widget.apps.where((a) =>
+        a.name.toLowerCase().contains(q) || a.bundleId.toLowerCase().contains(q)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AlertDialog(
+      title: const Text('Pick an App'),
+      content: SizedBox(
+        width: 420,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search apps...',
+                prefixIcon: Icon(Icons.search, size: 20),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _search = v),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _filtered.isEmpty
+                  ? Center(child: Text('No apps found', style: theme.textTheme.bodySmall))
+                  : ListView.separated(
+                      itemCount: _filtered.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 4),
+                      itemBuilder: (ctx, i) {
+                        final app = _filtered[i];
+                        final alreadyAdded = widget.existingBundleIds.contains(app.bundleId);
+                        return ListTile(
+                          dense: true,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          leading: Icon(Icons.apps_rounded, size: 22,
+                            color: colorScheme.primary.withValues(alpha: 0.7)),
+                          title: Text(app.name, style: theme.textTheme.bodyMedium),
+                          subtitle: Text(app.bundleId,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontFamily: 'monospace', fontSize: 11,
+                              color: colorScheme.onSurface.withValues(alpha: 0.5),
+                            )),
+                          trailing: alreadyAdded
+                              ? Icon(Icons.check, size: 18, color: const Color(0xFF10B981))
+                              : null,
+                          onTap: alreadyAdded
+                              ? null
+                              : () {
+                                  widget.onPick(app);
+                                  setState(() {
+                                    widget.existingBundleIds.add(app.bundleId);
+                                  });
+                                },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Done')),
+      ],
     );
   }
 }

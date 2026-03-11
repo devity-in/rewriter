@@ -12,6 +12,9 @@ class AppConfig {
   final String? ollamaModel; // Ollama model name (e.g. llama2, mistral)
   final String themeMode; // 'system', 'light', or 'dark'
   final List<CustomStyle> customStyles;
+  final String appFilterMode; // 'all', 'allowlist', 'blocklist'
+  final List<FilteredApp> allowedApps;
+  final List<FilteredApp> blockedApps;
 
   AppConfig({
     this.enabled = true,
@@ -26,6 +29,9 @@ class AppConfig {
     this.ollamaModel,
     this.themeMode = 'system',
     this.customStyles = const [],
+    this.appFilterMode = 'all',
+    this.allowedApps = const [],
+    this.blockedApps = const [],
   });
 
   AppConfig copyWith({
@@ -41,6 +47,9 @@ class AppConfig {
     String? ollamaModel,
     String? themeMode,
     List<CustomStyle>? customStyles,
+    String? appFilterMode,
+    List<FilteredApp>? allowedApps,
+    List<FilteredApp>? blockedApps,
   }) {
     return AppConfig(
       enabled: enabled ?? this.enabled,
@@ -55,6 +64,9 @@ class AppConfig {
       ollamaModel: ollamaModel ?? this.ollamaModel,
       themeMode: themeMode ?? this.themeMode,
       customStyles: customStyles ?? this.customStyles,
+      appFilterMode: appFilterMode ?? this.appFilterMode,
+      allowedApps: allowedApps ?? this.allowedApps,
+      blockedApps: blockedApps ?? this.blockedApps,
     );
   }
 
@@ -86,5 +98,20 @@ class CustomStyle {
     id: json['id'] as String,
     name: json['name'] as String,
     prompt: json['prompt'] as String,
+  );
+}
+
+/// An application tracked in the allowlist or blocklist
+class FilteredApp {
+  final String bundleId;
+  final String name;
+
+  FilteredApp({required this.bundleId, required this.name});
+
+  Map<String, dynamic> toJson() => {'bundleId': bundleId, 'name': name};
+
+  factory FilteredApp.fromJson(Map<String, dynamic> json) => FilteredApp(
+    bundleId: json['bundleId'] as String,
+    name: json['name'] as String? ?? json['bundleId'] as String,
   );
 }
