@@ -97,9 +97,9 @@ class GeminiService implements AIService {
   Future<RewriteResult> rewriteText(
     String text, {
     String style = 'professional',
+    String? customPrompt,
   }) async {
     try {
-      // Check rate limit before making request
       if (rateLimitService != null) {
         final rateLimitCheck = await rateLimitService!.canMakeRequest();
         if (!rateLimitCheck.allowed) {
@@ -113,15 +113,15 @@ class GeminiService implements AIService {
       }
 
       final modelName = await _getModelName();
-      // Model name from API might be "models/gemini-1.5-flash" or just "gemini-1.5-flash"
-      // If it includes "models/", use it directly, otherwise add "models/" prefix
       final cleanModelName = modelName.startsWith('models/')
           ? modelName.replaceFirst('models/', '')
           : modelName;
       final url =
           '$_baseUrl/models/$cleanModelName:generateContent?key=$apiKey';
 
-      final prompt = _buildPrompt(text, style);
+      final prompt = customPrompt != null
+          ? '$customPrompt\n\n"$text"\n\nProvide only the rewritten sentence without quotes or additional explanation.'
+          : _buildPrompt(text, style);
 
       final response = await http
           .post(

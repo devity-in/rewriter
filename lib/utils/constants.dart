@@ -1,8 +1,7 @@
 /// Application constants
 class AppConstants {
-  // App info
   static const String appName = 'Rewriter';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.2.0';
   
   // Default values
   static const int defaultDebounceMs = 1000;

@@ -34,9 +34,12 @@ class OllamaService implements AIService {
   Future<RewriteResult> rewriteText(
     String text, {
     String style = 'professional',
+    String? customPrompt,
   }) async {
     try {
-      final prompt = _buildPrompt(text, style);
+      final prompt = customPrompt != null
+          ? '$customPrompt\n\n"$text"\n\nProvide only the rewritten sentence without quotes or additional explanation.'
+          : _buildPrompt(text, style);
       final uri = Uri.parse('$baseUrl/api/generate');
 
       final response = await http

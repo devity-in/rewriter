@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import '../../core/models/app_config.dart';
+import '../../core/models/rewrite_result.dart';
 import '../../ui/providers/app_provider.dart';
 import '../../core/services/gemini_service.dart';
 import '../../core/services/local_ai_service.dart';
@@ -277,6 +279,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         child: _NobodyWhoInfoSection(
                           isInitialized: provider.rewriterService.nobodyWhoService?.isInitialized ?? false,
                           isInitializing: provider.isLocalAIInitializing,
+                          isEnabled: config.enabled,
+                          serviceExists: provider.rewriterService.nobodyWhoService != null,
                         ),
                       ),
                     ),
@@ -306,6 +310,57 @@ class _SettingsPageState extends State<SettingsPage> {
                           });
                           provider.updateConfig(
                             config.copyWith(rewriteStyle: style),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 20)),
+
+                  // Custom Styles Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _CustomStylesSection(
+                        customStyles: config.customStyles,
+                        selectedStyle: _selectedStyle,
+                        onStyleSelected: (style) {
+                          setState(() => _selectedStyle = style);
+                          provider.updateConfig(
+                            config.copyWith(rewriteStyle: style),
+                          );
+                        },
+                        onStylesChanged: (styles) {
+                          provider.updateConfig(
+                            config.copyWith(customStyles: styles),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(child: SizedBox(height: 32)),
+
+                  // Theme Section
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _SectionHeader(
+                        title: 'Appearance',
+                        subtitle: 'Choose your theme',
+                      ),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _ThemeSection(
+                        currentMode: config.themeMode,
+                        onChanged: (mode) {
+                          provider.updateConfig(
+                            config.copyWith(themeMode: mode),
                           );
                         },
                       ),
@@ -412,7 +467,9 @@ class _StatusCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isConfigured = modelType == 'local' || modelType == 'ollama' || modelType == 'nobodywho' || hasApiKey;
-    final isActive = isEnabled && isConfigured && !isLocalAIInitializing;
+    // For NobodyWho/local, only truly active when hasApiKey is true
+    // (which checks isInitialized for these model types)
+    final isReady = isEnabled && isConfigured && !isLocalAIInitializing && hasApiKey;
 
     String statusText;
     String statusSubtext;
@@ -421,10 +478,16 @@ class _StatusCard extends StatelessWidget {
 
     if (isLocalAIInitializing) {
       statusText = 'Initializing';
-      statusSubtext = 'Downloading and setting up local AI model...';
+      statusSubtext = 'Loading local AI model into memory...';
       statusIcon = Icons.download;
       statusColor = const Color(0xFF3B82F6);
-    } else if (isActive) {
+    } else if (isEnabled && isConfigured && !hasApiKey) {
+      // Model type is selected and enabled, but not initialized yet
+      statusText = 'Loading';
+      statusSubtext = 'Preparing the AI model...';
+      statusIcon = Icons.hourglass_top_rounded;
+      statusColor = const Color(0xFF3B82F6);
+    } else if (isReady) {
       statusText = 'Active';
       statusSubtext = 'Rewriting clipboard text automatically';
       statusIcon = Icons.check_circle;
@@ -450,15 +513,15 @@ class _StatusCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isActive
+        color: isReady
             ? statusColor.withValues(alpha: 0.1)
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isActive
+          color: isReady
               ? statusColor.withValues(alpha: 0.3)
               : colorScheme.outline.withValues(alpha: 0.1),
-          width: isActive ? 1.5 : 1,
+          width: isReady ? 1.5 : 1,
         ),
       ),
       child: Row(
@@ -1048,7 +1111,33 @@ class _TestSection extends StatefulWidget {
 
 class _TestSectionState extends State<_TestSection> {
   bool _isTesting = false;
-  String? _testResult;
+  bool? _testSuccess;
+  String? _testOriginal;
+  String? _testRewritten;
+  String? _testError;
+  Duration? _testDuration;
+
+  static const _testInput = 'hey can u pls check the deploy logs, something broke on prod and i think its the auth service again';
+
+  /// Strip think-tag blocks and backticks from AI output.
+  String _cleanResponse(String text) {
+    String s = text.trim();
+    while (true) {
+      final start = s.toLowerCase().indexOf('<think>');
+      if (start < 0) break;
+      final end = s.toLowerCase().indexOf('</think>', start);
+      if (end < 0) break;
+      s = (s.substring(0, start) + s.substring(end + '</think>'.length)).trim();
+    }
+    while (s.startsWith('`')) { s = s.substring(1).trim(); }
+    while (s.endsWith('`')) { s = s.substring(0, s.length - 1).trim(); }
+    // Remove wrapping quotes that some models add
+    if ((s.startsWith('"') && s.endsWith('"')) ||
+        (s.startsWith("'") && s.endsWith("'"))) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    return s;
+  }
 
   Future<void> _testRewrite() async {
     final config = widget.provider.config;
@@ -1069,140 +1158,105 @@ class _TestSectionState extends State<_TestSection> {
         return;
       }
     }
-    if (config.modelType == 'nobodywho') {
-      // Bundled model — no additional config needed
-    }
 
     setState(() {
       _isTesting = true;
-      _testResult = null;
+      _testSuccess = null;
+      _testOriginal = null;
+      _testRewritten = null;
+      _testError = null;
+      _testDuration = null;
     });
+
+    final stopwatch = Stopwatch()..start();
 
     try {
       final rewriterService = widget.provider.rewriterService;
+      late final RewriteResult result;
 
       if (config.modelType == 'ollama') {
         final base = config.ollamaBaseUrl ?? 'http://localhost:11434';
         final model = config.ollamaModel!.trim();
-        final ollamaService = OllamaService(baseUrl: base, model: model);
-        const testText =
-            'This is a test sentence to verify the rewriting functionality.';
-        final result = await ollamaService.rewriteText(
-          testText,
-          style: config.rewriteStyle,
-        );
-        if (mounted) {
-          setState(() {
-            _isTesting = false;
-            _testResult = result.success
-                ? 'Success! Rewritten: "${result.rewrittenText}"'
-                : 'Error: ${result.error}';
-          });
-        }
+        final service = OllamaService(baseUrl: base, model: model);
+        result = await service.rewriteText(_testInput, style: config.rewriteStyle);
       } else if (config.modelType == 'nobodywho') {
         final nwService = NobodyWhoService();
         await nwService.initialize();
-
-        const testText =
-            'This is a test sentence to verify the rewriting functionality.';
-        final result = await nwService.rewriteText(
-          testText,
-          style: config.rewriteStyle,
-        );
-
-        if (mounted) {
-          setState(() {
-            _isTesting = false;
-            _testResult = result.success
-                ? 'Success! Rewritten: "${result.rewrittenText}"'
-                : 'Error: ${result.error}';
-          });
-        }
-
+        result = await nwService.rewriteText(_testInput, style: config.rewriteStyle);
         nwService.dispose();
       } else if (config.modelType == 'local') {
         if (config.modelUrl == null || config.modelUrl!.isEmpty) {
+          stopwatch.stop();
           if (mounted) {
             setState(() {
               _isTesting = false;
-              _testResult =
-                  'Error: Model URL is required. MediaPipe GenAI requires models to be downloaded at runtime. Please configure a model URL in settings.';
+              _testSuccess = false;
+              _testError = 'Model URL is required. Configure it above first.';
             });
           }
           return;
         }
-
-        final localAIService = LocalAIService();
-        await localAIService.initialize(modelUrl: config.modelUrl!);
-
-        const testText =
-            'This is a test sentence to verify the rewriting functionality.';
-        final result = await localAIService.rewriteText(
-          testText,
-          style: config.rewriteStyle,
-        );
-
-        if (mounted) {
-          setState(() {
-            _isTesting = false;
-            _testResult = result.success
-                ? 'Success! Rewritten: "${result.rewrittenText}"'
-                : 'Error: ${result.error}';
-          });
-        }
-
-        localAIService.dispose();
+        final service = LocalAIService();
+        await service.initialize(modelUrl: config.modelUrl!);
+        result = await service.rewriteText(_testInput, style: config.rewriteStyle);
+        service.dispose();
       } else {
-        // Gemini
-        final geminiService = GeminiService(
+        final service = GeminiService(
           apiKey: config.apiKey!,
           rateLimitService: rewriterService.rateLimitService,
         );
+        result = await service.rewriteText(_testInput, style: config.rewriteStyle);
+      }
 
-        const testText =
-            'This is a test sentence to verify the rewriting functionality.';
-        final result = await geminiService.rewriteText(
-          testText,
-          style: config.rewriteStyle,
-        );
+      stopwatch.stop();
 
-        if (mounted) {
-          setState(() {
-            _isTesting = false;
-            _testResult = result.success
-                ? 'Success! Rewritten: "${result.rewrittenText}"'
-                : 'Error: ${result.error}';
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testDuration = stopwatch.elapsed;
+          _testOriginal = _testInput;
+          if (result.success) {
+            _testSuccess = true;
+            _testRewritten = _cleanResponse(result.rewrittenText);
+          } else {
+            _testSuccess = false;
+            _testError = result.error ?? 'Unknown error';
+          }
+        });
       }
     } catch (e) {
+      stopwatch.stop();
       if (mounted) {
         final errorStr = e.toString().toLowerCase();
         String errorMessage;
-        if (errorStr.contains('native assets not available') ||
-            errorStr.contains('native-assets') ||
-            errorStr.contains('symbol not found') ||
-            errorStr.contains('couldn\'t resolve native')) {
-          errorMessage =
-              'Local AI native assets not configured.\n'
-              'Enable native-assets: `flutter config --enable-native-assets`\n'
-              'Then run `flutter pub get` and rebuild the app.\n'
-              'Alternatively, switch to Gemini API in the model selection above.';
+        if (errorStr.contains('native assets') || errorStr.contains('symbol not found')) {
+          errorMessage = 'Local AI native libraries are not configured. '
+              'Switch to a different model, or run: flutter config --enable-native-assets';
+        } else if (errorStr.contains('timeout')) {
+          errorMessage = 'The request timed out. The model may be too slow or the server is unreachable.';
+        } else if (errorStr.contains('connection') || errorStr.contains('socket')) {
+          errorMessage = 'Could not connect. Check that the server is running and the URL is correct.';
         } else {
-          errorMessage = 'Error: $e';
+          // Trim verbose exception wrappers
+          errorMessage = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+          if (errorMessage.length > 200) {
+            errorMessage = '${errorMessage.substring(0, 197)}...';
+          }
         }
         setState(() {
           _isTesting = false;
-          _testResult = errorMessage;
+          _testSuccess = false;
+          _testError = errorMessage;
+          _testDuration = stopwatch.elapsed;
         });
       }
     }
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
   @override
@@ -1222,7 +1276,7 @@ class _TestSectionState extends State<_TestSection> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Verify your AI model is working correctly',
+          'Send a sample sentence and see how it gets rewritten',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurface.withValues(alpha: 0.6),
           ),
@@ -1245,40 +1299,134 @@ class _TestSectionState extends State<_TestSection> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
         ),
-        if (_testResult != null) ...[
-          const SizedBox(height: 12),
+
+        // Success result
+        if (_testSuccess == true && _testRewritten != null) ...[
+          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _testResult!.contains('Success')
-                  ? const Color(0xFF10B981).withValues(alpha: 0.1)
-                  : Colors.red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: _testResult!.contains('Success')
-                    ? const Color(0xFF10B981).withValues(alpha: 0.3)
-                    : Colors.red.withValues(alpha: 0.3),
-              ),
+              color: const Color(0xFF10B981).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.25)),
             ),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  _testResult!.contains('Success')
-                      ? Icons.check_circle
-                      : Icons.error_outline,
-                  size: 20,
-                  color: _testResult!.contains('Success')
-                      ? const Color(0xFF10B981)
-                      : Colors.red,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _testResult!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface,
+                Row(
+                  children: [
+                    const Icon(Icons.check_circle, size: 18, color: Color(0xFF10B981)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Test Passed',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF10B981),
+                      ),
                     ),
+                    const Spacer(),
+                    if (_testDuration != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${(_testDuration!.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // Original
+                Text(
+                  'Original',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface.withValues(alpha: 0.5),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _testOriginal!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Rewritten
+                Text(
+                  'Rewritten',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF10B981),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  _testRewritten!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
+        // Error result
+        if (_testSuccess == false && _testError != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.error.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.error.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 18, color: colorScheme.error),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Test Failed',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.error,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_testDuration != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${(_testDuration!.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: 0.6),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _testError!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.8),
                   ),
                 ),
               ],
@@ -2423,10 +2571,14 @@ class _DownloadedModelsSectionState extends State<_DownloadedModelsSection> {
 class _NobodyWhoInfoSection extends StatelessWidget {
   final bool isInitialized;
   final bool isInitializing;
+  final bool isEnabled;
+  final bool serviceExists;
 
   const _NobodyWhoInfoSection({
     required this.isInitialized,
     required this.isInitializing,
+    required this.isEnabled,
+    required this.serviceExists,
   });
 
   @override
@@ -2437,19 +2589,36 @@ class _NobodyWhoInfoSection extends StatelessWidget {
     final String statusText;
     final IconData statusIcon;
     final Color statusColor;
+    final bool showSpinner;
 
-    if (isInitializing) {
-      statusText = 'Loading model into memory...';
-      statusIcon = Icons.hourglass_top_rounded;
-      statusColor = const Color(0xFF3B82F6);
-    } else if (isInitialized) {
+    if (isInitialized) {
       statusText = 'Model loaded and ready';
       statusIcon = Icons.check_circle;
       statusColor = const Color(0xFF10B981);
+      showSpinner = false;
+    } else if (isInitializing) {
+      statusText = 'Loading model into memory...';
+      statusIcon = Icons.hourglass_top_rounded;
+      statusColor = const Color(0xFF3B82F6);
+      showSpinner = true;
+    } else if (isEnabled && serviceExists) {
+      // Service exists, enabled, but initialize() hasn't been called yet
+      // or is about to be called (300ms delay in RewriterService)
+      statusText = 'Preparing model...';
+      statusIcon = Icons.hourglass_top_rounded;
+      statusColor = const Color(0xFF3B82F6);
+      showSpinner = true;
+    } else if (isEnabled) {
+      // Enabled but service not created yet (provider still loading)
+      statusText = 'Starting up...';
+      statusIcon = Icons.hourglass_top_rounded;
+      statusColor = const Color(0xFF3B82F6);
+      showSpinner = true;
     } else {
-      statusText = 'Model will load when enabled';
+      statusText = 'Enable the toggle above to load the model';
       statusIcon = Icons.info_outline;
       statusColor = colorScheme.onSurface.withValues(alpha: 0.6);
+      showSpinner = false;
     }
 
     return Column(
@@ -2470,7 +2639,7 @@ class _NobodyWhoInfoSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (isInitializing)
+              if (showSpinner)
                 SizedBox(
                   width: 20,
                   height: 20,
@@ -2525,6 +2694,353 @@ class _NobodyWhoInfoSection extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Theme section
+// ---------------------------------------------------------------------------
+
+class _ThemeSection extends StatelessWidget {
+  final String currentMode;
+  final ValueChanged<String> onChanged;
+
+  const _ThemeSection({required this.currentMode, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _ThemeOptionCard(
+          label: 'System',
+          icon: Icons.brightness_auto_rounded,
+          isSelected: currentMode == 'system',
+          onTap: () => onChanged('system'),
+        ),
+        _ThemeOptionCard(
+          label: 'Light',
+          icon: Icons.light_mode_rounded,
+          isSelected: currentMode == 'light',
+          onTap: () => onChanged('light'),
+        ),
+        _ThemeOptionCard(
+          label: 'Dark',
+          icon: Icons.dark_mode_rounded,
+          isSelected: currentMode == 'dark',
+          onTap: () => onChanged('dark'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThemeOptionCard extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ThemeOptionCard({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? colorScheme.primary.withValues(alpha: 0.1)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.1),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                ),
+              ),
+              if (isSelected) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.check, size: 16, color: colorScheme.primary),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Custom styles section
+// ---------------------------------------------------------------------------
+
+class _CustomStylesSection extends StatelessWidget {
+  final List<CustomStyle> customStyles;
+  final String selectedStyle;
+  final ValueChanged<String> onStyleSelected;
+  final ValueChanged<List<CustomStyle>> onStylesChanged;
+
+  const _CustomStylesSection({
+    required this.customStyles,
+    required this.selectedStyle,
+    required this.onStyleSelected,
+    required this.onStylesChanged,
+  });
+
+  void _addStyle(BuildContext context) async {
+    final result = await showDialog<CustomStyle>(
+      context: context,
+      builder: (context) => const _CustomStyleDialog(),
+    );
+    if (result != null) {
+      onStylesChanged([...customStyles, result]);
+    }
+  }
+
+  void _editStyle(BuildContext context, int index) async {
+    final result = await showDialog<CustomStyle>(
+      context: context,
+      builder: (context) => _CustomStyleDialog(existing: customStyles[index]),
+    );
+    if (result != null) {
+      final updated = List<CustomStyle>.from(customStyles);
+      updated[index] = result;
+      onStylesChanged(updated);
+    }
+  }
+
+  void _deleteStyle(int index) {
+    final removed = customStyles[index];
+    final updated = List<CustomStyle>.from(customStyles)..removeAt(index);
+    onStylesChanged(updated);
+    if (selectedStyle == removed.id) {
+      onStyleSelected('professional');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Custom Styles',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => _addStyle(context),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+            ),
+          ],
+        ),
+        if (customStyles.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Create custom rewrite styles with your own prompts.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+          )
+        else
+          ...customStyles.asMap().entries.map((entry) {
+            final index = entry.key;
+            final style = entry.value;
+            final isSelected = selectedStyle == style.id;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => onStyleSelected(style.id),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? colorScheme.primary.withValues(alpha: 0.1)
+                          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.1),
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.brush_rounded,
+                          size: 18,
+                          color: isSelected ? colorScheme.primary : colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                style.name,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                  color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                                ),
+                              ),
+                              Text(
+                                style.prompt.length > 60
+                                    ? '${style.prompt.substring(0, 60)}...'
+                                    : style.prompt,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurface.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          onPressed: () => _editStyle(context, index),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline, size: 16, color: colorScheme.error),
+                          onPressed: () => _deleteStyle(index),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                        ),
+                        if (isSelected)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(Icons.check_circle, size: 18, color: colorScheme.primary),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+}
+
+class _CustomStyleDialog extends StatefulWidget {
+  final CustomStyle? existing;
+
+  const _CustomStyleDialog({this.existing});
+
+  @override
+  State<_CustomStyleDialog> createState() => _CustomStyleDialogState();
+}
+
+class _CustomStyleDialogState extends State<_CustomStyleDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _promptController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.existing?.name ?? '');
+    _promptController = TextEditingController(text: widget.existing?.prompt ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _promptController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.existing != null;
+    return AlertDialog(
+      title: Text(isEditing ? 'Edit Custom Style' : 'New Custom Style'),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Style Name',
+                hintText: 'e.g. Tweet, CEO Email, Poem...',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _promptController,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Prompt',
+                hintText: 'e.g. Rewrite this text as a concise tweet under 280 characters:',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final name = _nameController.text.trim();
+            final prompt = _promptController.text.trim();
+            if (name.isEmpty || prompt.isEmpty) return;
+            final id = widget.existing?.id ?? 'custom_${DateTime.now().millisecondsSinceEpoch}';
+            Navigator.pop(context, CustomStyle(id: id, name: name, prompt: prompt));
+          },
+          child: Text(isEditing ? 'Save' : 'Create'),
         ),
       ],
     );

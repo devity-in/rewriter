@@ -201,6 +201,9 @@ class RewriterService {
     _onRewrittenTextChanged = callback;
   }
 
+  /// Get current status callback (used to chain callbacks)
+  Function(String)? get onStatusChangedCallback => _onStatusChanged;
+
   /// Set callback for when status changes
   set onStatusChanged(Function(String)? callback) {
     _onStatusChanged = callback;
@@ -312,10 +315,20 @@ class RewriterService {
     _onOriginalTextChanged?.call(textToRewrite);
 
     try {
-      // Generate single rewritten version
+      final effectiveStyle = _config?.rewriteStyle ?? 'professional';
+      // Resolve custom style prompt
+      String? customPrompt;
+      if (_config != null) {
+        final custom = _config!.customStyles.where((s) => s.id == effectiveStyle);
+        if (custom.isNotEmpty) {
+          customPrompt = custom.first.prompt;
+        }
+      }
+
       final result = await _aiService!.rewriteText(
         textToRewrite,
-        style: _config?.rewriteStyle ?? 'professional',
+        style: effectiveStyle,
+        customPrompt: customPrompt,
       );
 
       if (result.success) {
@@ -433,6 +446,107 @@ class RewriterService {
     while (s.startsWith('`')) { s = s.substring(1).trim(); }
     while (s.endsWith('`')) { s = s.substring(0, s.length - 1).trim(); }
     return s.trim();
+  }
+
+  /// Generate multiple rewrite variants for the manual input UI.
+  /// Returns a list of rewritten texts (typically 2-3).
+  Future<List<String>> manualRewriteMultiple(String text, {String? style, int count = 3}) async {
+    if (_aiService == null) return [];
+
+    if (_config?.modelType == 'local' && _localAIService != null && !_localAIService!.isInitialized) return [];
+    if (_config?.modelType == 'nobodywho' && _nobodyWhoService != null && !_nobodyWhoService!.isInitialized) return [];
+
+    final effectiveStyle = style ?? _config?.rewriteStyle ?? 'professional';
+    String? customPrompt;
+    if (_config != null) {
+      final custom = _config!.customStyles.where((s) => s.id == effectiveStyle);
+      if (custom.isNotEmpty) {
+        customPrompt = custom.first.prompt;
+      }
+    }
+
+    final results = <String>[];
+    for (var i = 0; i < count; i++) {
+      try {
+        final result = await _aiService!.rewriteText(
+          text,
+          style: effectiveStyle,
+          customPrompt: customPrompt,
+        );
+        if (result.success) {
+          final cleaned = _stripThinkTags(result.rewrittenText);
+          if (!results.contains(cleaned)) {
+            results.add(cleaned);
+          }
+        }
+      } catch (e) {
+        debugPrint('RewriterService: Variant $i error: $e');
+      }
+    }
+
+    if (results.isNotEmpty) {
+      await _historyService.addToHistory(
+        originalText: text,
+        rewrittenTexts: results,
+        style: effectiveStyle,
+      );
+      await _historyService.recordSuccess();
+      onStatsChanged?.call();
+    } else {
+      await _historyService.recordError();
+      onStatsChanged?.call();
+    }
+
+    return results;
+  }
+
+  /// Manually rewrite arbitrary text (for the on-demand input UI).
+  /// Returns the rewritten text or null on failure.
+  Future<String?> manualRewrite(String text, {String? style}) async {
+    if (_aiService == null) return null;
+
+    // For local AI / NobodyWho, ensure initialized
+    if (_config?.modelType == 'local' && _localAIService != null && !_localAIService!.isInitialized) return null;
+    if (_config?.modelType == 'nobodywho' && _nobodyWhoService != null && !_nobodyWhoService!.isInitialized) return null;
+
+    final effectiveStyle = style ?? _config?.rewriteStyle ?? 'professional';
+
+    String? customPrompt;
+    if (_config != null) {
+      final custom = _config!.customStyles.where((s) => s.id == effectiveStyle);
+      if (custom.isNotEmpty) {
+        customPrompt = custom.first.prompt;
+      }
+    }
+
+    try {
+      final result = await _aiService!.rewriteText(
+        text,
+        style: effectiveStyle,
+        customPrompt: customPrompt,
+      );
+
+      if (result.success) {
+        final cleaned = _stripThinkTags(result.rewrittenText);
+        await _historyService.addToHistory(
+          originalText: text,
+          rewrittenTexts: [cleaned],
+          style: effectiveStyle,
+        );
+        await _historyService.recordSuccess();
+        onStatsChanged?.call();
+        return cleaned;
+      } else {
+        await _historyService.recordError();
+        onStatsChanged?.call();
+        return null;
+      }
+    } catch (e) {
+      debugPrint('RewriterService: Manual rewrite error: $e');
+      await _historyService.recordError();
+      onStatsChanged?.call();
+      return null;
+    }
   }
 
   /// Dispose resources

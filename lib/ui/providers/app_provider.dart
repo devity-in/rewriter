@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../../core/models/app_config.dart';
 import '../../core/services/storage_service.dart';
 import '../../core/services/rewriter_service.dart';
@@ -22,6 +22,18 @@ class AppProvider extends ChangeNotifier {
   AppConfig? get config => _config;
   bool get isInitialized => _isInitialized;
   bool get isEnabled => _config?.enabled ?? false;
+
+  ThemeMode get themeMode {
+    switch (_config?.themeMode ?? 'system') {
+      case 'light':
+        return ThemeMode.light;
+      case 'dark':
+        return ThemeMode.dark;
+      default:
+        return ThemeMode.system;
+    }
+  }
+
   bool get hasApiKey {
     if (_config == null) return false;
     if (_config!.modelType == 'local') {
@@ -44,7 +56,6 @@ class AppProvider extends ChangeNotifier {
     return _config?.isValid ?? false;
   }
 
-  /// Check if local AI or NobodyWho is currently initializing
   bool get isLocalAIInitializing {
     if (_config?.modelType == 'local') {
       return _rewriterService.localAIService?.isInitializing ?? false;
@@ -61,6 +72,15 @@ class AppProvider extends ChangeNotifier {
     _config = await _storageService.loadConfig();
     _isInitialized = true;
     notifyListeners();
+
+    // Refresh the UI whenever the AI service reports a status change
+    // (e.g. NobodyWho finishes initializing). We chain with any
+    // existing callback so the tray manager keeps working.
+    final existingCallback = _rewriterService.onStatusChangedCallback;
+    _rewriterService.onStatusChanged = (String status) {
+      existingCallback?.call(status);
+      notifyListeners();
+    };
 
     if (_config?.enabled ?? false) {
       _rewriterService.start();

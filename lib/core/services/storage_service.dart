@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,8 +6,6 @@ import '../models/app_config.dart';
 
 /// Service for managing secure and persistent storage
 class StorageService {
-  // Configure secure storage - use default options for development
-  // For macOS without signing, flutter_secure_storage will use UserDefaults as fallback
   final _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(),
     iOptions: IOSOptions(),
@@ -23,6 +22,8 @@ class StorageService {
   static const String _modelUrlKey = 'model_url';
   static const String _ollamaBaseUrlKey = 'ollama_base_url';
   static const String _ollamaModelKey = 'ollama_model';
+  static const String _themeModeKey = 'theme_mode';
+  static const String _customStylesKey = 'custom_styles';
 
   /// Save API key securely
   Future<void> saveApiKey(String apiKey) async {
@@ -117,6 +118,7 @@ class StorageService {
     await prefs.setInt(_maxSentenceLengthKey, config.maxSentenceLength);
     await prefs.setString(_rewriteStyleKey, config.rewriteStyle);
     await prefs.setString(_modelTypeKey, config.modelType);
+    await prefs.setString(_themeModeKey, config.themeMode);
     if (config.modelUrl != null) {
       await prefs.setString(_modelUrlKey, config.modelUrl!);
     } else {
@@ -133,13 +135,14 @@ class StorageService {
       await prefs.remove(_ollamaModelKey);
     }
 
-    // Always save API key if provided, even if empty (to clear it)
-    // Only save API key for Gemini model
+    // Persist custom styles
+    final stylesJson = config.customStyles.map((s) => jsonEncode(s.toJson())).toList();
+    await prefs.setStringList(_customStylesKey, stylesJson);
+
     if (config.modelType == 'gemini') {
       if (config.apiKey != null) {
         await saveApiKey(config.apiKey!);
       } else {
-        // If apiKey is explicitly null, delete it
         await deleteApiKey();
       }
     }
@@ -151,8 +154,20 @@ class StorageService {
     final modelType =
         prefs.getString(_modelTypeKey) ?? 'nobodywho';
 
-    // Only load API key for Gemini model
     final apiKey = modelType == 'gemini' ? await getApiKey() : null;
+
+    // Load custom styles
+    final stylesJsonList = prefs.getStringList(_customStylesKey) ?? [];
+    final customStyles = stylesJsonList
+        .map((s) {
+          try {
+            return CustomStyle.fromJson(jsonDecode(s) as Map<String, dynamic>);
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<CustomStyle>()
+        .toList();
 
     final config = AppConfig(
       enabled: prefs.getBool(_enabledKey) ?? true,
@@ -165,6 +180,8 @@ class StorageService {
       modelUrl: prefs.getString(_modelUrlKey),
       ollamaBaseUrl: prefs.getString(_ollamaBaseUrlKey),
       ollamaModel: prefs.getString(_ollamaModelKey),
+      themeMode: prefs.getString(_themeModeKey) ?? 'system',
+      customStyles: customStyles,
     );
 
     debugPrint(

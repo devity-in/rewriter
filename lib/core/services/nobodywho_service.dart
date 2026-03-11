@@ -100,6 +100,7 @@ class NobodyWhoService implements AIService {
   Future<RewriteResult> rewriteText(
     String text, {
     String style = 'professional',
+    String? customPrompt,
   }) async {
     if (!_isInitialized || _chat == null) {
       return RewriteResult.failure(
@@ -109,7 +110,15 @@ class NobodyWhoService implements AIService {
     }
 
     try {
-      await _ensureChatForStyle(style);
+      if (customPrompt != null) {
+        _chat = nobodywho.Chat(
+          model: _model!,
+          systemPrompt: customPrompt,
+        );
+        _currentStyle = null;
+      } else {
+        await _ensureChatForStyle(style);
+      }
 
       final prompt = 'Rewrite the following text:\n\n$text';
       final response = await _chat!.ask(prompt).completed();

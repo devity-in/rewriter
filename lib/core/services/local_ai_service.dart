@@ -180,6 +180,7 @@ class LocalAIService implements AIService {
   Future<RewriteResult> rewriteText(
     String text, {
     String style = 'professional',
+    String? customPrompt,
   }) async {
     if (!_isInitialized || _llmEngine == null) {
       return RewriteResult.failure(
@@ -189,8 +190,9 @@ class LocalAIService implements AIService {
     }
 
     try {
-      // Build simple prompt following MediaPipe GenAI best practices
-      final prompt = _buildPrompt(text, style);
+      final prompt = customPrompt != null
+          ? '$customPrompt\n\n$text'
+          : _buildPrompt(text, style);
 
       // Generate response using MediaPipe GenAI
       final responseStream = _llmEngine!.generateResponse(prompt);

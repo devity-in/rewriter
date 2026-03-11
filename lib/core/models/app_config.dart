@@ -10,6 +10,8 @@ class AppConfig {
   final String? modelUrl; // URL to download model from at runtime (required for local AI)
   final String? ollamaBaseUrl; // Ollama server URL (e.g. http://localhost:11434)
   final String? ollamaModel; // Ollama model name (e.g. llama2, mistral)
+  final String themeMode; // 'system', 'light', or 'dark'
+  final List<CustomStyle> customStyles;
 
   AppConfig({
     this.enabled = true,
@@ -22,6 +24,8 @@ class AppConfig {
     this.modelUrl,
     this.ollamaBaseUrl,
     this.ollamaModel,
+    this.themeMode = 'system',
+    this.customStyles = const [],
   });
 
   AppConfig copyWith({
@@ -35,6 +39,8 @@ class AppConfig {
     String? modelUrl,
     String? ollamaBaseUrl,
     String? ollamaModel,
+    String? themeMode,
+    List<CustomStyle>? customStyles,
   }) {
     return AppConfig(
       enabled: enabled ?? this.enabled,
@@ -47,6 +53,8 @@ class AppConfig {
       modelUrl: modelUrl ?? this.modelUrl,
       ollamaBaseUrl: ollamaBaseUrl ?? this.ollamaBaseUrl,
       ollamaModel: ollamaModel ?? this.ollamaModel,
+      themeMode: themeMode ?? this.themeMode,
+      customStyles: customStyles ?? this.customStyles,
     );
   }
 
@@ -55,7 +63,6 @@ class AppConfig {
       return true;
     }
     if (modelType == 'nobodywho') {
-      // Bundled model — always valid once selected
       return true;
     }
     if (modelType == 'ollama') {
@@ -63,4 +70,21 @@ class AppConfig {
     }
     return apiKey != null && apiKey!.isNotEmpty;
   }
+}
+
+/// A user-defined custom writing style with a custom prompt template
+class CustomStyle {
+  final String id;
+  final String name;
+  final String prompt;
+
+  CustomStyle({required this.id, required this.name, required this.prompt});
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'prompt': prompt};
+
+  factory CustomStyle.fromJson(Map<String, dynamic> json) => CustomStyle(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    prompt: json['prompt'] as String,
+  );
 }

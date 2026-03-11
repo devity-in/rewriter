@@ -40,7 +40,7 @@ A Flutter desktop application that monitors clipboard changes, detects English s
 **Optional (only if using alternative AI backends):**
 - **Gemini API**: Google Gemini API key ([Get one here](https://makersuite.google.com/app/apikey))
 - **Ollama**: [Ollama](https://ollama.ai) installed and running, plus a model (e.g. `ollama pull gemma2:2b`)
-- **MediaPipe GenAI**: Model file (see [LOCAL_AI_SETUP.md](LOCAL_AI_SETUP.md))
+- **MediaPipe GenAI**: Model file in `.task` format (see [MediaPipe docs](https://ai.google.dev/edge/mediapipe/solutions/genai/llm_inference))
 
 ## Installation
 
@@ -113,7 +113,7 @@ Download the latest `Rewriter-v*.dmg` from the [Releases](../../releases) page, 
 ### Local AI (MediaPipe GenAI)
 - **Pros**: Works offline, no API key needed
 - **Cons**: Requires model download, native asset setup
-- **Setup**: See [LOCAL_AI_SETUP.md](LOCAL_AI_SETUP.md)
+- **Setup**: Download a `.task` model file and configure the model path in Settings
 
 ## Project Structure
 
